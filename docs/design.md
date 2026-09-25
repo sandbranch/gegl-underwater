@@ -90,6 +90,27 @@ precision when GIMP stores the result.
 
 The defaults are placeholders until they are tuned on test photos.
 
+## Borrowing from other projects
+
+Ideas and algorithms from papers and other projects are welcome; methods
+are not protected by copyright (patents are, see below). Code is another
+matter, and depends on its license:
+
+- **GPL-3.0 or compatible** (e.g. bornfree/dive-color-corrector,
+  GPL-3.0): may be copied or adapted, keeping the copyright notice and
+  crediting the project in the file and in this document.
+- **Permissive** (MIT, BSD, Apache-2.0; e.g. the CXH-Research list is
+  MIT): may be copied, keeping the license notice.
+- **No license** (e.g. nikolajbech/underwater-image-color-correction,
+  wangyanckxx/Single-Underwater-Image-Enhancement-and-Color-Restoration):
+  all rights reserved, so we take the ideas only and write our own code.
+
+Every borrowed idea or piece of code is credited here with its source.
+
+### Credits
+
+(none yet)
+
 ## Patents
 
 US 12,373,929 B2 (Arashi Vision, active until 2042), "Underwater image
