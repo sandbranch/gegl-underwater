@@ -172,8 +172,37 @@ implemented from the papers.
   learned methods come in (e.g. a 3D network with an adaptive median
   filter, ICPR workshops 2018,
   [Springer](https://link.springer.com/chapter/10.1007/978-3-030-05792-3_2)).
-  Not yet checked: the exact detection rule of Farhadifard et al.,
-  and any patents.
+
+  The detection rule, read from the paper itself (Farhadifard,
+  Radolko, Freiherr von Lukas, VISAPP 2017, pp. 280-287,
+  DOI 10.5220/0006261802800287). For each pixel p of a patch Ω, in RGB,
+  a pixel is marine snow when all three hold:
+
+  1. **Brighter than its patch:** `|p - mean(Ω)|^2 > W1 * σ(Ω)`.
+  2. **Isolated (a density outlier):** few pixels v of the patch lie
+     near p in color, `|p - v|^2 < W2 * σ(Ω)`; a real bright surface has
+     many similar neighbors, a speck has few (the idea is from Gutzeit
+     et al. 2010).
+  3. **Nearly colorless:** `|p_c - p_l| < T` for every pair of channels,
+     since specks lit by a strobe are close to white.
+
+  A detected pixel gets the median of the patch's pixels that were not
+  detected; the dark rim around a speck is left out of that median.
+  Patches overlap, and a pixel is only replaced if it was marked in more
+  than 80% of the n×n patches that contain it (a vote), with the median
+  of its candidate values; otherwise it keeps its value. Several patch
+  sizes are used, up to 19×19 for HD video frames.
+
+  W1, W2 and T are set by hand; the paper gives no values. It says itself
+  that reflections of the strobe (larger bright circles) are not handled.
+  Evaluating every overlapping patch is costly, so we need a cheaper
+  equivalent (e.g. means and variances from integral images, a single
+  patch size tied to a "speck size" control).
+
+  Patents: none found for the authors (University of Rostock,
+  Fraunhofer IGD). The only marine snow patents found are Jack Wade's
+  US 11,710,245 and its continuation US 12,217,439 (see Patents below),
+  which are about video.
 
 ## Color constancy underwater
 
@@ -223,6 +252,7 @@ them at full size.
 | [US11024047B2](https://patents.google.com/patent/US11024047B2/en) | Univ. of California (IBLA) | active to 2037 | depth from a multi-scale blurriness map, max filter, refinement | no blurriness-based depth |
 | [US10885611B2](https://patents.google.com/patent/US10885611B2/en) | Tel Aviv Univ., Univ. of Haifa (haze-lines) | US: expired, maintenance fees not paid | clustering pixels into haze-lines | no haze-line clustering; other countries not checked |
 | Sea-thru family (WO2020234886A1, US20220215509A1, EP3973500, ...) | Univ. of Haifa, SeaErra | US application abandoned; others not checked | recovery using a range map | no range map |
+| [US11710245B2](https://patents.google.com/patent/US11710245B2/en), continuation [US12217439B2](https://patents.google.com/patent/US12217439B2/en) | Jack Wade | granted 2023 and 2025 | marine snow removal from live video: every independent claim needs a camera, optical flow between frames with the camera's own motion subtracted, and (in the continuation) a chroma mask per frame, video display, FPGA or DVR; removed pixels come from earlier frames or neighbors | a single photo has no frames and no optical flow; our spatial detection and median fill is outside these claims (read from the granted claims, all 6 and all 20) |
 
 Our reading of the claims, not legal advice.
 

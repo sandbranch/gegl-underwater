@@ -53,11 +53,16 @@
       weighted by how much red was rebuilt, so well-lit areas keep their
       detail. Until then: stack Wavelet Denoise (CIELAB, strong a*/b*,
       gentle L*) after this filter in GIMP.
-- [ ] A separate operation `underwater:marine-snow`: detect small bright
-      isolated specks against their surroundings and median-filter only
-      those (after Farhadifard et al. 2017), with size and sensitivity
-      controls; check the paper's detection rule and patents first;
-      watch for false positives on sand, scales and plankton
+- [x] Check the detection rule of Farhadifard et al. 2017 and patents
+      (research.md, "Noise and particles" and "Patents")
+- [ ] A separate operation `underwater:marine-snow`: mark pixels that
+      are brighter than their patch, isolated in color and nearly
+      colorless (the paper's three tests), and replace only those with
+      the median of the unmarked neighbors, after Farhadifard et al.
+      2017; controls for speck size (patch size) and sensitivity (W1,
+      W2, T behind one or two sliders); a cheap stand-in for the
+      overlapping-patch vote; watch for false positives on sand, scales,
+      white fish and plankton
 
 ## 5. Speed and polish
 
