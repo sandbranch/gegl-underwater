@@ -1,5 +1,11 @@
 # Plan
 
+**Where we left off (2026-09-25):** skeleton, research and design are
+done, and so is the marine snow research (4b). Next is milestone 1, which
+waits on test photos in `tests/images/`. The status of all the GIMP 3
+work is in
+[gimp-plugin-devtools/STATUS.md](https://github.com/sandbranch/gimp-plugin-devtools/blob/main/STATUS.md).
+
 ## 0. Skeleton (done)
 
 - [x] Repository, license (GPL-3.0-or-later), meson build
