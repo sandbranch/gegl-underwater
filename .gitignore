@@ -1,0 +1,5 @@
+build/
+# photos are only committed with the photographer's permission, see tests/images/README.md
+tests/images/*
+!tests/images/README.md
+tests/output/
