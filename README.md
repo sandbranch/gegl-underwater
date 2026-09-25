@@ -9,9 +9,11 @@ It runs as a non-destructive filter in GIMP: Colors > Underwater Color
 Correction..., with on-canvas preview, split view and presets, and it stays
 editable in the layer's filter list.
 
-**Status: skeleton.** The operation and its settings exist, the processing
-does not yet; it passes the image through unchanged. See
-[PLAN.md](PLAN.md).
+**Status:** `underwater:marine-snow` (Filters > Enhance > Remove Marine
+Snow...) works: it removes the bright specks of particles lit by a strobe
+and leaves the rest of the photo alone. The color correction
+(`underwater:correct`) is still a skeleton that passes the image through.
+See [PLAN.md](PLAN.md).
 
 - [docs/design.md](docs/design.md): how it works and why, and the patent
   it stays clear of

@@ -1,7 +1,7 @@
 # Plan
 
 **Where we left off (2026-09-25):** skeleton, research and design are
-done, and so is the marine snow research (4b). Next is milestone 1, which
+done, and so is marine snow removal (4b). Next is milestone 1, which
 waits on test photos in `tests/images/`. The status of all the GIMP 3
 work is in
 [gimp-plugin-devtools/STATUS.md](https://github.com/sandbranch/gimp-plugin-devtools/blob/main/STATUS.md).
@@ -61,14 +61,17 @@ work is in
       gentle L*) after this filter in GIMP.
 - [x] Check the detection rule of Farhadifard et al. 2017 and patents
       (research.md, "Noise and particles" and "Patents")
-- [ ] A separate operation `underwater:marine-snow`: mark pixels that
-      are brighter than their patch, isolated in color and nearly
-      colorless (the paper's three tests), and replace only those with
-      the median of the unmarked neighbors, after Farhadifard et al.
-      2017; controls for speck size (patch size) and sensitivity (W1,
-      W2, T behind one or two sliders); a cheap stand-in for the
-      overlapping-patch vote; watch for false positives on sand, scales,
-      white fish and plankton
+- [x] A separate operation `underwater:marine-snow` (Filters > Enhance >
+      Remove Marine Snow...), after Farhadifard et al. 2017, with fast
+      stand-ins for their tests (research.md). On the synthetic scene
+      (`tests/marine-snow/run.sh`): 97.7 % of the specks no longer
+      visible, sand 0.03 % and the fish 0.06 % of pixels changed, a large
+      white object untouched, a dark eye under a speck kept; 1 to 2 s on
+      24 MP. Works as a non-destructive filter in GIMP
+      (`tests/marine-snow/gimp-test.sh`).
+- [ ] Marine snow on real photos: check small white fish, plankton that
+      is part of the subject, strobe reflections (larger bright circles,
+      which the paper also leaves alone), and specks on busy reef
 
 ## 5. Speed and polish
 

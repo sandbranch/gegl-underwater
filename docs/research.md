@@ -199,6 +199,36 @@ implemented from the papers.
   equivalent (e.g. means and variances from integral images, a single
   patch size tied to a "speck size" control).
 
+  What `underwater:marine-snow` does instead (operations/marine-snow.c),
+  and what the synthetic test showed on the way:
+
+  1. **Bright and small**: a white top-hat of the luma (the image minus
+     its grayscale opening with a square of the speck size) above a
+     threshold. It replaces the brightness test and most of the patch
+     machinery: whatever is brighter than its surroundings and smaller
+     than the square is left in the top-hat.
+  2. **Colorless light**: the color of the light the speck adds (the
+     pixel minus the opening of each channel) must be nearly neutral.
+     Testing the color of the pixel itself, as a first version did,
+     misses specks over blue water, which look blue-white: marine snow
+     is strobe light added on top of what is behind it.
+  3. **Isolated** (their density test): the number of spots (brightest
+     pixels of each candidate) in a window of about 4 speck sizes must
+     be low. Counting candidate pixels instead, as a first version did,
+     takes a single large speck for texture. Grains in sand are many
+     spots close together and are kept.
+  4. **The whole speck**: detected pixels grow into neighbors that still
+     stand out a little (hysteresis, 30 % of the threshold), then by one
+     pixel, so the soft edge goes too; without it faint rings remained.
+  5. **Replacement**: the median of the unmarked neighbors whose color is
+     close to the opening there (what is behind the speck), or the
+     opening itself when there are none. A plain median of all unmarked
+     neighbors, as in the paper, erased a small dark eye under a speck.
+
+  Synthetic scene (tests/marine-snow): 384 visible specks; with the
+  default settings 9 remain visible, 0.03 % of the sand and 0.06 % of the
+  fish change, a large white object is untouched.
+
   Patents: none found for the authors (University of Rostock,
   Fraunhofer IGD). The only marine snow patents found are Jack Wade's
   US 11,710,245 and its continuation US 12,217,439 (see Patents below),

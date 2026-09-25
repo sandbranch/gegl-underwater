@@ -19,6 +19,7 @@ endif
 # each operation is a module of its own
 operations = {
   'underwater-correct': ['operations/underwater-correct.c'],
+  'marine-snow': ['operations/marine-snow.c'],
 }
 
 foreach op, sources : operations
