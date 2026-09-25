@@ -46,6 +46,19 @@
 - [ ] Compare against MLLE's published results as the reference among
       classical methods
 
+## 4b. Noise and particles
+
+- [ ] "Reduce red noise": wavelet denoise (the algorithm of
+      gegl-wavelet's `wavelet:denoise`) on the restored channels,
+      weighted by how much red was rebuilt, so well-lit areas keep their
+      detail. Until then: stack Wavelet Denoise (CIELAB, strong a*/b*,
+      gentle L*) after this filter in GIMP.
+- [ ] A separate operation `underwater:marine-snow`: detect small bright
+      isolated specks against their surroundings and median-filter only
+      those (after Farhadifard et al. 2017), with size and sensitivity
+      controls; check the paper's detection rule and patents first;
+      watch for false positives on sand, scales and plankton
+
 ## 5. Speed and polish
 
 - [ ] Spread the per-pixel steps over GEGL's threads (as in

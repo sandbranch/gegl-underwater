@@ -151,6 +151,30 @@ implemented from the papers.
   over- or under-saturate (Wang et al. 2019); CLAHE only on L if at all.
   GEGL has no CLAHE operation.
 
+## Noise and particles
+
+- **Noise from restoring red.** Amplifying a weak red channel amplifies
+  its noise; several papers address it, e.g. with wavelet decomposition
+  so that noise in the high frequencies is not amplified
+  ([Enhancing Underwater Image via Adaptive Color and Contrast
+  Enhancement, and Denoising](https://arxiv.org/pdf/2104.01073);
+  [adaptive color correction and stationary wavelet detail
+  enhancement](https://ieeexplore.ieee.org/document/10399776/)). Our own
+  wavelet denoise (gegl-wavelet, `wavelet:denoise`, CIELAB mode with
+  stronger a*/b* thresholds) fits this directly.
+- **Marine snow**, the bright specks of particles lit by the strobe:
+  Farhadifard et al., "Single Image Marine Snow Removal based on a
+  Supervised Median Filtering Scheme" (2017,
+  [Semantic Scholar](https://www.semanticscholar.org/paper/Single-Image-Marine-Snow-Removal-based-on-a-Median-Farhadifard-Radolko/ae28a23a3a3df5cc5ce23fd8c03de08721e642e0)):
+  detect the specks, then median-filter only them, so the rest stays
+  sharp. Median filtering works when the specks are small (about 1-3
+  pixels); for large ones a big filter blurs the image, which is where
+  learned methods come in (e.g. a 3D network with an adaptive median
+  filter, ICPR workshops 2018,
+  [Springer](https://link.springer.com/chapter/10.1007/978-3-030-05792-3_2)).
+  Not yet checked: the exact detection rule of Farhadifard et al.,
+  and any patents.
+
 ## Color constancy underwater
 
 Gray-world, max-RGB/white patch, shades of gray (Finlayson & Trezzi 2004)
