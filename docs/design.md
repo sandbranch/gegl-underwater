@@ -32,46 +32,66 @@ the steps.
 
 ## Pipeline
 
-All steps work on linear RGB (float) in the color space of the image.
+All steps work on linear RGB (float) in the color space of the image, as
+the physics requires (Berman et al.). The literature behind each step is
+in [research.md](research.md).
 
-1. **Statistics.** Channel means, and robust percentiles, over the whole
-   image (the operation asks GEGL for the whole input, like
-   `gegl:stretch-contrast`).
+Two principles from the research shape it:
 
-2. **Water color (veiling light).** Either estimated from the image, from
-   the pixels that are furthest away: bright, low-contrast, and dominated
-   by blue/green; or picked by the user from open water with GIMP's color
-   picker (`water-color`, shown when `auto-water` is off).
+- **Backscatter and color loss are different effects** with different
+  coefficients (Akkaynak & Treibitz, revised model, 2018), so they are
+  removed in separate steps with separate controls, backscatter first.
+- **A photo has two layers** (photographers' practice): a strobe-lit
+  foreground that is about daylight-balanced, and an ambient-lit
+  background that has lost its red. Corrections for water act on the
+  ambient layer, so strobe-lit subjects do not turn red; this is where
+  global filters fail.
 
-3. **Backscatter removal** (`backscatter`, 0 to 1). Estimate per pixel how
-   much of it is veil, from a dark-channel-like measure on the green and
-   blue channels (red carries little information underwater), smoothed so
-   that it follows scene structure, and subtract that share of the water
-   color. The strength scales the estimate.
+1. **Statistics** over the whole image (the operation asks GEGL for all
+   of its input): channel means and percentiles.
 
-4. **Red restoration** (`red-restore`, 0 to 2) from the green channel,
-   which keeps detail where red has none, following the red channel
-   compensation of Ancuti et al. (TIP 2018), as published:
+2. **Water color A (veiling light).** Estimated from the darkest RGB
+   triplets and the brightest pixels of a green/blue dark channel (the
+   ideas of Sea-thru and UDCP, done once for the whole image), or picked
+   by the user from open water (`water-color` with `auto-water` off). A is
+   kept within the range of physically plausible water colors (Akkaynak et
+   al. 2017).
+
+3. **Transmission and layers.** A transmission map t from a minimum
+   filter on green and blue (UDCP), refined edge-aware (guided filter or
+   `gegl:domain-transform`), with the rank-one projection (ROP) as a
+   cross-check. A soft **ambient mask** marks the ambient-lit layer: low t,
+   little red; strobe-lit areas are recognized by their saturation and
+   red (the cue of Galdran et al.) and kept out of it.
+
+4. **Backscatter removal** (`backscatter`, 0 to 1):
+   `D = I - backscatter * A * (1 - t)`.
+
+5. **Red restoration** (`red-restore`, 0 to 2) on D, as published by
+   Ancuti et al. (TIP 2018, Eq. 4), with a the strength:
 
        R' = R + a * (mean(G) - mean(R)) * (1 - R) * G
 
-   with R, G in 0..1 and `a` the strength. The factor (1 - R) * G restores
-   red where it is missing and where green has signal, and leaves pixels
-   that already have red alone. Note: a widely copied MATLAB version
-   simplifies this to `R + a * (mean(G) - mean(R))`; we follow the paper,
-   to be checked against the paper itself (PLAN.md).
+   applied through the ambient mask and weighted per pixel by how much
+   red is missing (the attenuation-weighted idea of ACDC and MLLE), so
+   strobe-lit subjects and pixels that already have red are left alone.
+   **Blue restoration** (`blue-restore`, Eq. 5) does the same for blue in
+   green or turbid water. A local variant after 3C (Ancuti et al. 2020,
+   opponent channels minus their large-scale mean) is kept as an option
+   to evaluate.
 
-   **Blue restoration** (`blue-restore`, default 0) does the same for blue,
-   for green water where blue is absorbed too.
+6. **White balance** (`white-balance`): shades of gray (Minkowski p about
+   6) on the non-water pixels, after the compensation, with clamped gains
+   so that a tiny red mean cannot blow up noise. A local variant (local
+   average color, as Sea-thru's LSAC or gray world in lαβ with integral
+   images) is an option to evaluate for uneven light.
 
-5. **White balance** (`white-balance`). A robust gray-world estimate of the
-   remaining cast (ignoring the brightest and darkest percentiles), as a
-   per-channel gain in linear light.
+7. **Keep water color** (`keep-water`, 0 to 1): add back
+   `keep-water * A * (1 - t)` (A white-balanced), so open water stays
+   blue instead of turning gray.
 
-6. **Keep water color** (`keep-water`, 0 to 1). The corrected photo is
-   blended back towards the water color where the backscatter estimate
-   says a pixel is mostly water, so open water stays blue while the
-   subject is corrected.
+Later, as optional finishing steps (PLAN.md): local contrast on L from
+integral images (MLLE), and a gentle chroma curve on a*/b* (RGHS).
 
 Clipping: none for float images; integer images are limited by their
 precision when GIMP stores the result.
@@ -113,21 +133,23 @@ Every borrowed idea or piece of code is credited here with its source.
 
 ## Patents
 
-US 12,373,929 B2 (Arashi Vision, active until 2042), "Underwater image
-color restoration method and apparatus", claims (claim 1) a method with
-all of these steps: converting 8-bit RGB to linear sRGB; adjusting each
-channel by mean values; a weight per pixel; gains for the red and blue
-channels; converting back to 8-bit; ranking pixel values for maximum and
-minimum adjustment values per channel; adjusting by those; and fusing the
-original with the adjusted values by the per-pixel weights.
+The patents found are listed in [research.md](research.md#patents). Two
+shape this design:
 
-This design does not use that combination: it works in float at any
-precision without converting to 8-bit, restores red from green (Ancuti)
-rather than by red and blue gains, estimates backscatter from a
-dark-channel measure, and has no ranking-based stretch or weighted fusion
-of original and adjusted values. Any change to the pipeline is checked
-against the claim before it is made. This is our reading of the claim, not
-legal advice.
+- **US 12,373,929 B2** (Arashi Vision, active until 2042) claims (claim 1)
+  a method with all of these steps: converting 8-bit RGB to linear sRGB;
+  adjusting each channel by mean values; a weight per pixel; gains for the
+  red and blue channels; converting back to 8-bit; ranking pixel values
+  for maximum and minimum adjustment values per channel; adjusting by
+  those; and fusing the original with the adjusted values by the per-pixel
+  weights. This design works in float at any precision without converting
+  to 8-bit, restores red from green (Ancuti) rather than by red and blue
+  gains, removes backscatter from a transmission estimate, and has no
+  ranking-based stretch and no weighted fusion of original and adjusted
+  values.
+- **US 11,024,047 B2** (University of California, IBLA, active until
+  2037) claims depth from a multi-scale blurriness map with a maximum
+  filter and refinement. This design uses no blurriness-based depth.
 
-No patent was found on the red channel compensation of Ancuti et al.
-(searched: Google Patents, September 2026); see research.md.
+Any change to the pipeline is checked against these claims before it is
+made. This is our reading of the claims, not legal advice.
