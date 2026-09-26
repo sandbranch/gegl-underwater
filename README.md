@@ -17,9 +17,20 @@ licensed photos from Wikimedia Commons (blue and green water, wrecks,
 reefs, strobe-lit subjects, neutral references), with known issues
 listed in [docs/design.md](docs/design.md). See [PLAN.md](PLAN.md).
 
-To test: `tests/images/fetch.py` downloads the photos, `tests/run.sh`
-writes before/after sheets and measurements to `tests/output/`, and
-`tests/gimp-test.sh` checks the filter in GIMP.
+To test, after building:
+
+- `tests/check.sh`: pass/fail tests of both operations on synthetic
+  images (sizes from 1 x 1, uniform, gray, float images with NaN, the
+  properties at their limits, parts of the image against the whole);
+  needs no photos, network or display. With a build made with
+  `-Db_sanitize=address,undefined` it also runs under AddressSanitizer
+  and UBSan, see the script.
+- `tests/gimp-check.sh`: both filters in GIMP, without a window, against
+  plain GEGL, with a throwaway GIMP profile in `tests/output/`.
+- `tests/images/fetch.py` downloads the test photos; `tests/run.sh`
+  writes before/after sheets and measurements of them to
+  `tests/output/`, for looking at, and `tests/gimp-test.sh` compares
+  the installed filter in GIMP with the command line on one of them.
 
 - [docs/design.md](docs/design.md): how it works and why, and the patent
   it stays clear of

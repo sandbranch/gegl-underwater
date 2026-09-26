@@ -652,19 +652,19 @@ correct_rows (gsize offset, gsize count, gpointer user_data)
         gfloat        t = sample_t (e, x, y);
         gfloat        v[3], a[3], k[3], m;
 
-        /* 3.-4. the subject, without the veil */
+        /* 3.-4. (docs/design.md) the subject, without the veil */
         sample_map (e, e->wmap, x, y, a);
         sample_map (e, e->kmap, x, y, k);
         subject (o, a, p, t, v);
 
-        /* 5. red and blue restoration where the light is ambient, for
+        /* 5.-6. red and blue restoration where the light is ambient, for
          * subjects: open water in the distance must stay water, not turn
          * violet from red added to its blue */
         m = ambient_weight (v) * smoothstep (0.15f, 0.6f, t);
         restore (o, e, v, m);
 
-        /* 6. white balance, eased back to neutral for near-white pixels so
-         * that highlights do not turn magenta; 7. the part of the veil that
+        /* 7. white balance, eased back to neutral for near-white pixels so
+         * that highlights do not turn magenta; 8. the part of the veil that
          * is kept, in a mix of the water's own color and neutral */
         {
           gfloat hi = MIN (v[0], MIN (v[1], v[2]));

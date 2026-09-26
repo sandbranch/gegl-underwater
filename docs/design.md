@@ -52,7 +52,11 @@ The steps as implemented (first version, `operations/underwater-correct.c`):
 1. **Whole image.** The operation reads all of its input as linear
    "RGBA float" and works on three sizes: a small copy (512 px on the
    long side, by block averaging) for the estimates, a medium copy (about
-   1536 px) for the transmission map, and the full image for the result.
+   1536 px) for the transmission map, and the full image for the result,
+   which is written over the copy of the input (16 bytes a pixel). NaN
+   and infinite pixels count as black in the estimates, so they stay
+   where they are; an input without bounds (gegl:color) is passed
+   through.
 
 2. **Water color A (veiling light).** With `auto-water` on, a quadtree
    search on the small copy (after Kim et al. 2013): the image is split

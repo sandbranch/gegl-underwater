@@ -26,6 +26,9 @@ work is in
       photo and writes before/after sheets to `tests/output/`
 - [x] Simple measurements per photo: channel means, spread, clipped
       pixels (`measurements.txt`)
+- [x] Pass/fail tests on synthetic images, `tests/check.sh` (also
+      under AddressSanitizer and UBSan), and in GIMP against plain GEGL,
+      `tests/gimp-check.sh`
 - [ ] The quality metrics UCIQE/UIQM from the literature
       as a second opinion only (their known weaknesses: research.md)
 - [x] Check the red compensation formula against the paper itself
@@ -89,8 +92,10 @@ work is in
       0.7 s in the operation, 0.9 s more than load and save as JPEG
 - [ ] Slider labels, descriptions and ranges checked in GIMP's dialog
 - [ ] A note on the known GEGL command line warning about a leaked
-      buffer, which whole-image operations such as gegl:stretch-contrast
-      also show; check it does not appear in GIMP
+      buffer (and `gegl_tile_cache_destroy: runtime check failed`),
+      which whole-image operations such as gegl:stretch-contrast also
+      show (checked: the same two warnings on the same photo); check it
+      does not appear in GIMP
 
 ## 6. Release
 
