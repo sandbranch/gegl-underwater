@@ -22,3 +22,16 @@ committed):
 - So the next step is not the transmission but the gating: the
   correction should fade with "is this water" (the open water mask),
   not with distance. A far sea floor is still a subject.
+
+### Gating by the open water mask (tried 2026-09-26)
+
+Fading the red restoration and white balance by "not open water" (the
+fit's mask) instead of by t did not remove the green of far sea floor in
+murk; the green comes from the kept veil. Fading the kept veil over
+non-water too (half, or all) removes the green but makes it worse: dark,
+blotchy patches with hard edges along the mask's border, red sea floor
+under the turtle (ambient-green-04), black shadows. The mask is a hard,
+coarse region; the veil it gates is large, so every error in the mask
+shows. A soft, continuous measure of "water in front of this pixel" is
+needed rather than a region mask; the branch keeps the build switches
+UW_GATE and UW_VEIL for trying more.

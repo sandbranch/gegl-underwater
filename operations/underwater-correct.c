@@ -78,6 +78,17 @@ property_double (keep_water, _("Keep water color"), 0.5)
 
 #include "gegl-op.h"
 
+#ifndef UW_TMIX
+#define UW_TMIX 1.0f
+#endif
+#ifndef UW_VEIL
+#define UW_VEIL 0.5f
+#endif
+#ifndef UW_GATE
+#define UW_GATE 1
+#endif
+
+
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
@@ -249,7 +260,7 @@ transmission (Estimate *e, const gfloat *luma)
          * local average elsewhere: in murk the floor is far, but should
          * still be corrected as a subject */
         {
-          gfloat w = e->smap && e->owat ? e->owat[(gsize) y * e->w + x] : 0.0f;
+          gfloat w = e->smap ? UW_TMIX : 0.0f;
 
           e->t[(gsize) y * e->w + x] = 1.0f - 0.9f * ((1.0f - w) * v + w * vs);
         }
@@ -915,6 +926,20 @@ sample_t (const Estimate *e, gint x, gint y)
 }
 
 /* a color map at a full-size pixel, interpolated from the small copy */
+/* a map of one value per pixel of the small copy, at a full-size pixel */
+static inline gfloat
+sample_scalar (const Estimate *e, const gfloat *m, gint x, gint y)
+{
+  gfloat fx = CLAMP ((x + 0.5f) / e->f - 0.5f, 0.0f, e->w - 1.0f);
+  gfloat fy = CLAMP ((y + 0.5f) / e->f - 0.5f, 0.0f, e->h - 1.0f);
+  gint   x0 = (gint) fx, y0 = (gint) fy;
+  gint   x1 = MIN (x0 + 1, e->w - 1), y1 = MIN (y0 + 1, e->h - 1);
+  gfloat ax = fx - x0, ay = fy - y0;
+
+  return (1 - ay) * ((1 - ax) * m[(gsize) y0 * e->w + x0] + ax * m[(gsize) y0 * e->w + x1])
+       +      ay  * ((1 - ax) * m[(gsize) y1 * e->w + x0] + ax * m[(gsize) y1 * e->w + x1]);
+}
+
 static inline void
 sample_map (const Estimate *e, const gfloat *m, gint x, gint y, gfloat *a)
 {
@@ -969,7 +994,7 @@ correct_rows (gsize offset, gsize count, gpointer user_data)
         const gfloat *p = d->in + (y * d->W + x) * 4;
         gfloat       *q = d->out + (y * d->W + x) * 4;
         gfloat        t = sample_t (e, x, y);
-        gfloat        v[3], a[3], k[3], m, wet;
+        gfloat        v[3], a[3], k[3], m, wet, subj;
 
         /* 3.-4. (docs/design.md) the subject, without the veil */
         sample_map (e, e->wmap, x, y, a);
@@ -979,7 +1004,12 @@ correct_rows (gsize offset, gsize count, gpointer user_data)
         /* 5.-6. red and blue restoration where the light is ambient, for
          * subjects: open water in the distance must stay water, not turn
          * violet from red added to its blue */
-        m = ambient_weight (v) * smoothstep (0.15f, 0.6f, t);
+        /* how much of a subject this is: not open water. With open water
+         * found, that decides (a far sea floor is still a subject); else
+         * the distance does, as before */
+        subj = e->owat && UW_GATE ? 1.0f - sample_scalar (e, e->owat, x, y)
+                                  : smoothstep (0.15f, 0.6f, t);
+        m = ambient_weight (v) * subj;
         /* distant pixels of the water's own colour are water: given red,
          * blue water turns indigo. Only in the distance: near subjects
          * under a strong cast have nearly the colour of the water too. */
@@ -1002,7 +1032,10 @@ correct_rows (gsize offset, gsize count, gpointer user_data)
         {
           gfloat hi = MIN (v[0], MIN (v[1], v[2]));
           gfloat protect = smoothstep (0.6f, 1.0f, hi);
-          gfloat veil = (1.0f - o->backscatter) * (1.0f - t);
+          /* the kept veil: all of it over open water, and less over
+           * subjects (a far sea floor in murk would stay green) */
+          gfloat veil = (1.0f - o->backscatter) * (1.0f - t) *
+                        (e->owat && UW_GATE ? 1.0f - (1.0f - UW_VEIL) * subj : 1.0f);
           /* near white in the photo (a torch, the sun, a sunbeam): no
            * colour to correct. Bright water has a low red and is not, or
            * it would turn white. */
@@ -1011,7 +1044,7 @@ correct_rows (gsize offset, gsize count, gpointer user_data)
           gfloat clipped = smoothstep (0.5f, 0.85f, pmin);
           /* the white balance is for subjects; in the distance there is
            * mostly water, whose red would be boosted to violet */
-          gfloat near = smoothstep (0.15f, 0.6f, t);
+          gfloat near = subj;
           near *= 1.0f - wet;
 
           for (c = 0; c < 3; c++)
