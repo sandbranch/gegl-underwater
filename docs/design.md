@@ -189,6 +189,17 @@ On the 42 test photos (`tests/run.sh`):
 - a gray subject in blue water (the shark in ambient-blue-01) comes out
   slightly warm.
 
+### Only the pixels
+
+The operation uses only the pixels of the photo, never its metadata, so
+that it gives the same result for every copy of a photo and needs nothing
+but the image. Ideas that need metadata, such as a first guess of the
+water's colour from the dive site (GPS, or the time matched to a phone
+photo from the boat, with satellite maps of water clarity and chlorophyll
+per place and month), belong in a separate plug-in that sets the
+operation's settings, not in the operation. (GoPro photos taken under
+water have no GPS position: the signal does not reach through water.)
+
 ## Controls
 
 | Property | Range | Default | What it does |
