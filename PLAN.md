@@ -1,8 +1,10 @@
 # Plan
 
-**Where we left off (2026-09-25):** skeleton, research and design are
-done, and so is marine snow removal (4b). Next is milestone 1, which
-waits on test photos in `tests/images/`. The status of all the GIMP 3
+**Where we left off (2026-09-26):** skeleton, research, design and
+marine snow removal (4b) are done. The color correction works in a first
+version (milestones 1 to 3), tested on 42 Commons photos; the known
+issues are in docs/design.md. Next: those issues, SQUID, and real dive
+photos from the user. The status of all the GIMP 3
 work is in
 [gimp-plugin-devtools/STATUS.md](https://github.com/sandbranch/gimp-plugin-devtools/blob/main/STATUS.md).
 
@@ -16,12 +18,15 @@ work is in
 
 ## 1. Test photos and measurements
 
-- [ ] A set of real underwater photos in `tests/images/` (see its README
-      for what is wanted and the rules for committing them)
-- [ ] `tests/run.sh`: runs the operation with given settings on every
+- [x] A set of underwater photos: 42 freely licensed photos from
+      Wikimedia Commons, listed in `tests/images/manifest.json` and
+      downloaded with `tests/images/fetch.py` (not committed)
+- [ ] Real dive photos from the user
+- [x] `tests/run.sh`: runs the operation with given settings on every
       photo and writes before/after sheets to `tests/output/`
-- [ ] Simple measurements per photo: channel means, gray-world deviation,
-      clipped pixels; the quality metrics UCIQE/UIQM from the literature
+- [x] Simple measurements per photo: channel means, spread, clipped
+      pixels (`measurements.txt`)
+- [ ] The quality metrics UCIQE/UIQM from the literature
       as a second opinion only (their known weaknesses: research.md)
 - [x] Check the red compensation formula against the paper itself
       (Ancuti et al., TIP 2018, Eq. 4; see research.md)
@@ -30,16 +35,20 @@ work is in
 
 ## 2. Color: red/blue restoration and white balance
 
-- [ ] Statistics pass (means, percentiles) over the whole image
-- [ ] Red and blue restoration, attenuation-weighted (design step 5)
-- [ ] Robust white balance (design step 6)
-- [ ] Look at the results on all test photos; tune the defaults
+- [x] Statistics pass (means, percentiles) over the whole image
+- [x] Red and blue restoration, attenuation-weighted (design step 5)
+- [x] Robust white balance (design step 6)
+- [x] Look at the results on all test photos; tune the defaults (first round)
 
 ## 3. Water: color estimate, backscatter, keep water color
 
-- [ ] Water color estimate and the picked color (design step 2)
-- [ ] Transmission map, ambient mask and backscatter removal (design steps 3-4)
-- [ ] Keep water color (design step 7)
+- [x] Water color estimate and the picked color (design step 2)
+- [x] Transmission map, ambient mask and backscatter removal (design steps 3-4)
+- [x] Keep water color (design step 7)
+- [x] Works as a non-destructive filter in GIMP, same result as the
+      command line (`tests/gimp-test.sh`)
+- [ ] Fix the known issues (docs/design.md): cyan near the surface,
+      khaki murky green water, glow around subjects
 - [ ] Tune on the test photos; compare against simple red boosting and
       plain white balance to show the difference
 

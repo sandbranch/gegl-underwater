@@ -47,54 +47,92 @@ Two principles from the research shape it:
   ambient layer, so strobe-lit subjects do not turn red; this is where
   global filters fail.
 
-1. **Statistics** over the whole image (the operation asks GEGL for all
-   of its input): channel means and percentiles.
+The steps as implemented (first version, `operations/underwater-correct.c`):
 
-2. **Water color A (veiling light).** Estimated from the darkest RGB
-   triplets and the brightest pixels of a green/blue dark channel (the
-   ideas of Sea-thru and UDCP, done once for the whole image), or picked
-   by the user from open water (`water-color` with `auto-water` off). A is
-   kept within the range of physically plausible water colors (Akkaynak et
-   al. 2017).
+1. **Whole image.** The operation reads all of its input as linear
+   "RGBA float" and works on three sizes: a small copy (512 px on the
+   long side, by block averaging) for the estimates, a medium copy (about
+   1536 px) for the transmission map, and the full image for the result.
 
-3. **Transmission and layers.** A transmission map t from a minimum
-   filter on green and blue (UDCP), refined edge-aware (guided filter or
-   `gegl:domain-transform`), with the rank-one projection (ROP) as a
-   cross-check. A soft **ambient mask** marks the ambient-lit layer: low t,
-   little red; strobe-lit areas are recognized by their saturation and
-   red (the cue of Galdran et al.) and kept out of it.
+2. **Water color A (veiling light).** With `auto-water` on, a quadtree
+   search on the small copy (after Kim et al. 2013): the image is split
+   in four, the quarter with the best score is kept, down to 64 px or
+   less, and A is the mean of that last block. The score is
+   `mean(max(G, B) - R) - 2 * sd(luma)`: open water is blue or green, has
+   little red and is smooth. The UDCP choice (the brightest pixel of the
+   dark channel) was tried first and failed on real photos: it picked a
+   bright gray shark as the water. With `auto-water` off, A is
+   `water-color`.
 
-4. **Backscatter removal** (`backscatter`, 0 to 1):
-   `D = I - backscatter * A * (1 - t)`.
+3. **Transmission t.** `t = 1 - 0.9 * min over 3x3 of min(G/A_g, B/A_b)`
+   (UDCP on green and blue), refined with a guided filter (He et al.) on
+   luma, clamped to 0.1 to 1. It is refined a second time on the medium
+   copy, guided by its luma, which removes most halos around subjects;
+   the full image interpolates t from there.
 
-5. **Red restoration** (`red-restore`, 0 to 2) on D, as published by
-   Ancuti et al. (TIP 2018, Eq. 4), with a the strength:
+4. **Subject and veil.** The subject is recovered as
+   `J = max(I - A * (1 - t), 0) / max(t, 0.3)^clarity`: the veil is
+   taken off completely to measure the subject, and `clarity` (0 to 1)
+   sets how much of the lost contrast in the distance comes back.
+   `backscatter` then decides how much of the veil stays in the result.
 
-       R' = R + a * (mean(G) - mean(R)) * (1 - R) * G
+5. **Ambient weight.** `1 - smoothstep(0.35, 0.8, R/G)`: pixels that
+   already have red (strobe-lit subjects) get little or no water
+   correction. It is multiplied by `smoothstep(0.15, 0.6, t)`, so distant
+   water is left to step 7.
 
-   applied through the ambient mask and weighted per pixel by how much
-   red is missing (the attenuation-weighted idea of ACDC and MLLE), so
-   strobe-lit subjects and pixels that already have red are left alone.
-   **Blue restoration** (`blue-restore`, Eq. 5) does the same for blue in
-   green or turbid water. A local variant after 3C (Ancuti et al. 2020,
-   opponent channels minus their large-scale mean) is kept as an option
-   to evaluate.
+6. **Red and blue restoration** on J, after Ancuti et al. (TIP 2018,
+   Eq. 4), with one deviation: G is normalized by its mean,
 
-6. **White balance** (`white-balance`): shades of gray (Minkowski p about
-   6) on the non-water pixels, after the compensation, with clamped gains
-   so that a tiny red mean cannot blow up noise. A local variant (local
-   average color, as Sea-thru's LSAC or gray world in lαβ with integral
-   images) is an option to evaluate for uneven light.
+       R' = R + a * m * (mean(G) - mean(R)) * (1 - R) * min(G/mean(G), 3)
 
-7. **Keep water color** (`keep-water`, 0 to 1): add back
-   `keep-water * A * (1 - t)` (A white-balanced), so open water stays
-   blue instead of turning gray.
+   where m is the ambient weight. With plain G as in the paper, dark
+   photos (mean G about 0.1 in linear light) got almost no correction.
+   Blue gets the same with `blue-restore` plus an automatic part,
+   `0.5 * red-restore * greenness`, where greenness is
+   `(mean(G) - mean(B)) / mean(G)` of the subject: in green water, where
+   blue is absorbed too, it turns the olive cast into natural colors
+   without the user having to find the blue slider. The means are over
+   the subject, weighted by the ambient weight.
+
+7. **White balance** (`white-balance`): shades of gray (Minkowski p = 6)
+   over the restored subject, weighted by t, gives the light's color. The
+   gains are kept physically possible: red can only go up (1 to 2.5,
+   water never adds red), blue relative to green 0.6 to 2, and in blue
+   water blue can only go down, in green water only up. The gains are
+   normalized to keep luma. They fade out with distance (by t) and in
+   highlights (by the smallest channel from 0.6 to 1), so bright
+   highlights do not turn magenta. Without these limits the tests showed
+   violet water, strobe-lit reds cut away and green murk turning pink.
+
+8. **Result and keep water color.**
+
+       veil  = (1 - backscatter) * (1 - t)
+       A'    = keep-water * A + (1 - keep-water) * luma(A)
+       out   = J * gain * (1 - veil) + A' * veil
+
+   so `keep-water` 1 keeps the water's own color in the veil and 0 makes
+   it neutral gray of the same brightness. Pixels that were clipped in
+   the photo (median channel 0.85 to 1) are pulled back to their original
+   brightest channel, so blown highlights stay white.
 
 Later, as optional finishing steps (PLAN.md): local contrast on L from
 integral images (MLLE), and a gentle chroma curve on a*/b* (RGHS).
 
 Clipping: none for float images; integer images are limited by their
 precision when GIMP stores the result.
+
+### Known issues (first version)
+
+On the 42 test photos (`tests/run.sh`):
+
+- sunlit water near the surface turns slightly cyan (ambient-blue-03);
+- murky green water turns khaki gray rather than a clean green;
+- a slight glow can remain around subjects against open water;
+- a gray subject in blue water (the shark in ambient-blue-01) comes out
+  slightly warm;
+- speed: about 4 s on 24 MP on top of loading and saving (7.5 s against
+  3.5 s for load and save only, on this machine).
 
 ## Controls
 
@@ -106,9 +144,10 @@ precision when GIMP stores the result.
 | auto-water | on/off | on | Estimate the water color |
 | water-color | color | #1e6478 | Picked water color when auto is off |
 | backscatter | 0 to 1 | 0.5 | Remove the veil of scattered light |
+| clarity | 0 to 1 | 0.5 | Bring back contrast in the distance |
 | keep-water | 0 to 1 | 0.5 | Keep open water looking like water |
 
-The defaults are placeholders until they are tuned on test photos.
+The defaults are a first tuning on the test photos.
 
 ## Borrowing from other projects
 

@@ -12,8 +12,14 @@ editable in the layer's filter list.
 **Status:** `underwater:marine-snow` (Filters > Enhance > Remove Marine
 Snow...) works: it removes the bright specks of particles lit by a strobe
 and leaves the rest of the photo alone. The color correction
-(`underwater:correct`) is still a skeleton that passes the image through.
-See [PLAN.md](PLAN.md).
+(`underwater:correct`) works in a first version: tested on 42 freely
+licensed photos from Wikimedia Commons (blue and green water, wrecks,
+reefs, strobe-lit subjects, neutral references), with known issues
+listed in [docs/design.md](docs/design.md). See [PLAN.md](PLAN.md).
+
+To test: `tests/images/fetch.py` downloads the photos, `tests/run.sh`
+writes before/after sheets and measurements to `tests/output/`, and
+`tests/gimp-test.sh` checks the filter in GIMP.
 
 - [docs/design.md](docs/design.md): how it works and why, and the patent
   it stays clear of
