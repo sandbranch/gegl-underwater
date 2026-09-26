@@ -83,6 +83,12 @@ property_double (keep_water, _("Keep water color"), 0.5)
 
 /* the size of the copy on which the water and transmission are estimated */
 #define SMALL_SIZE 512
+/* the white balance: the Minkowski norm (shades of gray), and how far blue
+ * may be lowered against green. p = 6 looks mostly at the brightest
+ * pixels, often sunlit water, and left blue water scenes violet; p = 2 is
+ * closer to gray world and removes more of the blue */
+#define WB_P    2.0
+#define WB_BMIN 0.4f
 
 typedef struct
 {
@@ -92,6 +98,10 @@ typedef struct
   gint    mw, mh, mf;     /* medium size, on which t is refined along edges */
   gfloat *tm;             /* transmission at medium size */
   gfloat  water[3];       /* water color (veiling light), linear */
+  gfloat *wmap;           /* the water color per pixel of the small copy:
+                           * lighter towards the surface, darker below */
+  gfloat *kmap;           /* the part of it that is kept: keep-water sets
+                           * its chroma, with the same hue and lightness */
   gfloat  gain[3];        /* white balance gains */
   gfloat  mean_r, mean_g, mean_b; /* after removing the backscatter */
   gfloat  greenness;      /* 0 for blue water, 1 for green water, whose blue is absorbed too */
@@ -182,16 +192,124 @@ restore (GeglProperties *o, const Estimate *e, gfloat *v, gfloat m)
           * MAX (e->mean_g - e->mean_b, 0.0f) * (1.0f - B) * g;
 }
 
+static inline gfloat ambient_weight (const gfloat *d);
+
 /* the subject of a pixel: without all of the veil, and with the contrast
  * the water took away restored as far as the clarity says */
 static inline void
-subject (GeglProperties *o, const Estimate *e, const gfloat *p, gfloat t, gfloat *v)
+subject (GeglProperties *o, const gfloat *water, const gfloat *p, gfloat t, gfloat *v)
 {
   gfloat div = powf (MAX (t, 0.3f), o->clarity);
   gint   c;
 
   for (c = 0; c < 3; c++)
-    v[c] = MAX (p[c] - e->water[c] * (1.0f - t), 0.0f) / div;
+    v[c] = MAX (p[c] - water[c] * (1.0f - t), 0.0f) / div;
+}
+
+/* transmission of the small copy from the dark channel of green and blue
+ * relative to the water color there, refined along the edges */
+static void
+transmission (Estimate *e, const gfloat *luma)
+{
+  gsize n = (gsize) e->w * e->h, i;
+  gint  x, y;
+
+  for (y = 0; y < e->h; y++)
+    for (x = 0; x < e->w; x++)
+      {
+        const gfloat *a = e->wmap + ((gsize) y * e->w + x) * 3;
+        gfloat v = G_MAXFLOAT;
+        gint   dx, dy;
+        for (dy = -1; dy <= 1; dy++)
+          for (dx = -1; dx <= 1; dx++)
+            {
+              gint xx = CLAMP (x + dx, 0, e->w - 1), yy = CLAMP (y + dy, 0, e->h - 1);
+              const gfloat *p = e->rgb + ((gsize) yy * e->w + xx) * 3;
+              v = MIN (v, MIN (p[1] / a[1], p[2] / a[2]));
+            }
+        e->t[(gsize) y * e->w + x] = 1.0f - 0.9f * v;
+      }
+  guided_filter (luma, e->t, e->w, e->h, MAX (4, e->w / 40), 1e-3f);
+  for (i = 0; i < n; i++)
+    e->t[i] = CLAMP (e->t[i], 0.1f, 1.0f);
+}
+
+/* Oklab (Ottosson 2020) from and to linear RGB with the sRGB primaries,
+ * for mixing the water color with neutral: mixed in linear RGB, blue
+ * water turns lavender and green water khaki */
+static void
+to_oklab (const gfloat *rgb, gfloat *lab)
+{
+  gfloat l = cbrtf (0.4122214708f * rgb[0] + 0.5363325363f * rgb[1] + 0.0514459929f * rgb[2]);
+  gfloat m = cbrtf (0.2119034982f * rgb[0] + 0.6806995451f * rgb[1] + 0.1073969566f * rgb[2]);
+  gfloat s = cbrtf (0.0883024619f * rgb[0] + 0.2817188376f * rgb[1] + 0.6299787005f * rgb[2]);
+
+  lab[0] = 0.2104542553f * l + 0.7936177850f * m - 0.0040720468f * s;
+  lab[1] = 1.9779984951f * l - 2.4285922050f * m + 0.4505937099f * s;
+  lab[2] = 0.0259040371f * l + 0.7827717662f * m - 0.8086757660f * s;
+}
+
+static void
+from_oklab (const gfloat *lab, gfloat *rgb)
+{
+  gfloat l = lab[0] + 0.3963377774f * lab[1] + 0.2158037573f * lab[2];
+  gfloat m = lab[0] - 0.1055613458f * lab[1] - 0.0638541728f * lab[2];
+  gfloat s = lab[0] - 0.0894841775f * lab[1] - 1.2914855480f * lab[2];
+
+  l = l * l * l; m = m * m * m; s = s * s * s;
+  rgb[0] = MAX ( 4.0767416621f * l - 3.3077115913f * m + 0.2309699292f * s, 0.0f);
+  rgb[1] = MAX (-1.2684380046f * l + 2.6097574011f * m - 0.3413193965f * s, 0.0f);
+  rgb[2] = MAX (-0.0041960863f * l - 0.7034186147f * m + 1.7076882690f * s, 0.0f);
+}
+
+/* the kept water color: its chroma times keep-water */
+static void
+kept_map (GeglProperties *o, Estimate *e)
+{
+  gsize n = (gsize) e->w * e->h, i;
+
+  for (i = 0; i < n; i++)
+    {
+      gfloat lab[3];
+
+      to_oklab (e->wmap + i * 3, lab);
+      lab[1] *= o->keep_water;
+      lab[2] *= o->keep_water;
+      from_oklab (lab, e->kmap + i * 3);
+    }
+}
+
+/* The water color varies over a photo: open water is lighter and greener
+ * towards the sunlit surface and darker and bluer below. With one color
+ * for all of it, water lighter than that color counts as subject, and its
+ * excess turns green or cyan. The map is the average color of the open
+ * water (low transmission, red absorbed) around each pixel, over a wide
+ * window, and the one estimated color where there is little open water. */
+static void
+water_map (Estimate *e)
+{
+  gsize   n = (gsize) e->w * e->h, i;
+  gint    c, r = MAX (8, MAX (e->w, e->h) / 8);
+  gfloat *wt = g_new (gfloat, n), *num = g_new (gfloat, n), *den = g_new (gfloat, n);
+  const gfloat k = 0.05f;
+
+  for (i = 0; i < n; i++)
+    {
+      const gfloat *p = e->rgb + i * 3;
+      wt[i] = (1.0f - smoothstep (0.2f, 0.5f, e->t[i])) * ambient_weight (p);
+    }
+  box_mean (wt, den, e->w, e->h, r);
+  for (c = 0; c < 3; c++)
+    {
+      for (i = 0; i < n; i++)
+        num[i] = wt[i] * e->rgb[i * 3 + c];
+      box_mean (num, num, e->w, e->h, r);
+      for (i = 0; i < n; i++)
+        e->wmap[i * 3 + c] = MAX ((num[i] + k * e->water[c]) / (den[i] + k), 1e-4f);
+    }
+  g_free (den);
+  g_free (num);
+  g_free (wt);
 }
 
 /* the ambient mask: 1 where the light is ambient (red absorbed), 0 where
@@ -217,6 +335,8 @@ estimate (GeglProperties *o, const gfloat *in, gint W, gint H, Estimate *e)
   n    = (gsize) e->w * e->h;
   e->rgb = g_new0 (gfloat, n * 3);
   e->t   = g_new (gfloat, n);
+  e->wmap = g_new (gfloat, n * 3);
+  e->kmap = g_new (gfloat, n * 3);
 
   /* a small copy by averaging blocks */
   for (y = 0; y < e->h; y++)
@@ -336,25 +456,18 @@ estimate (GeglProperties *o, const gfloat *in, gint W, gint H, Estimate *e)
   for (c = 0; c < 3; c++)
     e->water[c] = MAX (e->water[c], 1e-4f);
 
-  /* transmission from the dark channel of green and blue relative to the
-   * water, refined along the edges of the photo */
-  for (y = 0; y < e->h; y++)
-    for (x = 0; x < e->w; x++)
-      {
-        gfloat v = G_MAXFLOAT;
-        gint   dx, dy;
-        for (dy = -1; dy <= 1; dy++)
-          for (dx = -1; dx <= 1; dx++)
-            {
-              gint xx = CLAMP (x + dx, 0, e->w - 1), yy = CLAMP (y + dy, 0, e->h - 1);
-              const gfloat *p = e->rgb + ((gsize) yy * e->w + xx) * 3;
-              v = MIN (v, MIN (p[1] / e->water[1], p[2] / e->water[2]));
-            }
-        e->t[(gsize) y * e->w + x] = 1.0f - 0.9f * v;
-      }
-  guided_filter (luma, e->t, e->w, e->h, MAX (4, e->w / 40), 1e-3f);
+  /* transmission against the one water color, then against the map of
+   * the water color made with it */
   for (i = 0; i < n; i++)
-    e->t[i] = CLAMP (e->t[i], 0.1f, 1.0f);
+    for (c = 0; c < 3; c++)
+      e->wmap[i * 3 + c] = e->water[c];
+  transmission (e, luma);
+  if (o->auto_water)
+    {
+      water_map (e);
+      transmission (e, luma);
+    }
+  kept_map (o, e);
 
   /* the means after the backscatter is removed, for the red and blue
    * restoration, over the pixels in ambient light */
@@ -364,7 +477,7 @@ estimate (GeglProperties *o, const gfloat *in, gint W, gint H, Estimate *e)
     for (i = 0; i < n; i++)
       {
         gfloat d[3], wgt;
-        subject (o, e, e->rgb + i * 3, e->t[i], d);
+        subject (o, e->wmap + i * 3, e->rgb + i * 3, e->t[i], d);
         wgt = ambient_weight (d);
         sr += wgt * d[0]; sg += wgt * d[1]; sb += wgt * d[2]; sw += wgt;
       }
@@ -374,7 +487,7 @@ estimate (GeglProperties *o, const gfloat *in, gint W, gint H, Estimate *e)
     e->greenness = CLAMP ((e->mean_g - e->mean_b) / MAX (e->mean_g, 1e-4f), 0.0f, 1.0f);
   }
 
-  /* white balance: shades of gray (Minkowski p = 6) on the restored small
+  /* white balance: shades of gray (Minkowski p = WB_P) on the restored small
    * copy, weighted to the near (not water) pixels */
   if (o->white_balance)
     {
@@ -383,17 +496,17 @@ estimate (GeglProperties *o, const gfloat *in, gint W, gint H, Estimate *e)
       for (i = 0; i < n; i++)
         {
           gfloat d[3], wgt;
-          subject (o, e, e->rgb + i * 3, e->t[i], d);
+          subject (o, e->wmap + i * 3, e->rgb + i * 3, e->t[i], d);
           restore (o, e, d, ambient_weight (d));
           wgt = e->t[i];
           for (c = 0; c < 3; c++)
-            s[c] += wgt * pow (MAX (d[c], 0.0f), 6.0);
+            s[c] += wgt * pow (MAX (d[c], 0.0f), WB_P);
           sw += wgt;
         }
       {
         gfloat ill[3], mean;
         for (c = 0; c < 3; c++)
-          ill[c] = pow (s[c] / MAX (sw, 1e-9), 1.0 / 6.0);
+          ill[c] = pow (s[c] / MAX (sw, 1e-9), 1.0 / WB_P);
         mean = (ill[0] + ill[1] + ill[2]) / 3.0f;
         /* limited, so that a tiny red cannot blow up the noise */
         /* gains relative to green, within what the physics allows: red
@@ -402,7 +515,7 @@ estimate (GeglProperties *o, const gfloat *in, gint W, gint H, Estimate *e)
          * against the other of green and blue, which in blue water turns
          * open water violet */
         gfloat rr = CLAMP (ill[1] / MAX (ill[0], 1e-6f), 1.0f, 2.5f);
-        gfloat rb = CLAMP (ill[1] / MAX (ill[2], 1e-6f), 0.6f, 2.0f);
+        gfloat rb = CLAMP (ill[1] / MAX (ill[2], 1e-6f), WB_BMIN, 2.0f);
         gfloat norm;
 
         (void) mean;
@@ -505,6 +618,22 @@ sample_t (const Estimate *e, gint x, gint y)
        +      ay  * ((1 - ax) * t[(gsize) y1 * e->mw + x0] + ax * t[(gsize) y1 * e->mw + x1]);
 }
 
+/* a color map at a full-size pixel, interpolated from the small copy */
+static inline void
+sample_map (const Estimate *e, const gfloat *m, gint x, gint y, gfloat *a)
+{
+  gfloat fx = CLAMP ((x + 0.5f) / e->f - 0.5f, 0.0f, e->w - 1.0f);
+  gfloat fy = CLAMP ((y + 0.5f) / e->f - 0.5f, 0.0f, e->h - 1.0f);
+  gint   x0 = (gint) fx, y0 = (gint) fy;
+  gint   x1 = MIN (x0 + 1, e->w - 1), y1 = MIN (y0 + 1, e->h - 1);
+  gfloat ax = fx - x0, ay = fy - y0;
+  gint   c;
+
+  for (c = 0; c < 3; c++)
+    a[c] = (1 - ay) * ((1 - ax) * m[((gsize) y0 * e->w + x0) * 3 + c] + ax * m[((gsize) y0 * e->w + x1) * 3 + c])
+         +      ay  * ((1 - ax) * m[((gsize) y1 * e->w + x0) * 3 + c] + ax * m[((gsize) y1 * e->w + x1) * 3 + c]);
+}
+
 typedef struct
 {
   GeglProperties *o;
@@ -530,10 +659,12 @@ correct_rows (gsize offset, gsize count, gpointer user_data)
         const gfloat *p = d->in + (y * d->W + x) * 4;
         gfloat       *q = d->out + (y * d->W + x) * 4;
         gfloat        t = sample_t (e, x, y);
-        gfloat        v[3], m;
+        gfloat        v[3], a[3], k[3], m;
 
         /* 3.-4. the subject, without the veil */
-        subject (o, e, p, t, v);
+        sample_map (e, e->wmap, x, y, a);
+        sample_map (e, e->kmap, x, y, k);
+        subject (o, a, p, t, v);
 
         /* 5. red and blue restoration where the light is ambient, for
          * subjects: open water in the distance must stay water, not turn
@@ -548,7 +679,6 @@ correct_rows (gsize offset, gsize count, gpointer user_data)
           gfloat hi = MIN (v[0], MIN (v[1], v[2]));
           gfloat protect = smoothstep (0.6f, 1.0f, hi);
           gfloat veil = (1.0f - o->backscatter) * (1.0f - t);
-          gfloat wluma = 0.2126f * e->water[0] + 0.7152f * e->water[1] + 0.0722f * e->water[2];
           /* clipped in the photo (a torch, the sun): no color to correct */
           gfloat pmax = MAX (p[0], MAX (p[1], p[2]));
           gfloat pmid = MAX (MIN (p[0], p[1]), MIN (MAX (p[0], p[1]), p[2]));
@@ -560,10 +690,7 @@ correct_rows (gsize offset, gsize count, gpointer user_data)
           for (c = 0; c < 3; c++)
             {
               gfloat gain = 1.0f + near * (1.0f - protect) * (e->gain[c] - 1.0f);
-              /* the kept veil: the water's own color, or neutral */
-              gfloat water = o->keep_water * e->water[c] + (1.0f - o->keep_water) * wluma;
-
-              q[c] = v[c] * gain * (1.0f - veil) + water * veil;
+              q[c] = v[c] * gain * (1.0f - veil) + k[c] * veil;
               q[c] = q[c] + clipped * (pmax - q[c]);
             }
         }
@@ -639,6 +766,8 @@ process (GeglOperation       *operation,
 
   gegl_buffer_set (output, whole, 0, format, out, GEGL_AUTO_ROWSTRIDE);
 
+  g_free (e.kmap);
+  g_free (e.wmap);
   g_free (e.tm);
   g_free (e.t);
   g_free (e.rgb);

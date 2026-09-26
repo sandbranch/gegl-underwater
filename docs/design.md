@@ -64,7 +64,16 @@ The steps as implemented (first version, `operations/underwater-correct.c`):
    bright gray shark as the water. With `auto-water` off, A is
    `water-color`.
 
-3. **Transmission t.** `t = 1 - 0.9 * min over 3x3 of min(G/A_g, B/A_b)`
+   **Water map.** One color is not enough: open water is lighter and
+   greener towards the sunlit surface and darker and bluer below, and
+   water lighter than A counted as subject, so its excess turned green
+   (ambient-blue-03, the first version). With `auto-water` on, the map is
+   the average color of the open water (low t from a first pass against
+   A, red absorbed) in a wide window (1/8 of the image) around each pixel,
+   falling back to A where there is little open water. t is then
+   estimated again against the map, and steps 4 and 8 use the map.
+
+3. **Transmission t.** `t = 1 - 0.9 * min over 3x3 of min(G/A_g, B/A_b)`, with A from the map
    (UDCP on green and blue), refined with a guided filter (He et al.) on
    luma, clamped to 0.1 to 1. It is refined a second time on the medium
    copy, guided by its luma, which removes most halos around subjects;
@@ -95,10 +104,13 @@ The steps as implemented (first version, `operations/underwater-correct.c`):
    without the user having to find the blue slider. The means are over
    the subject, weighted by the ambient weight.
 
-7. **White balance** (`white-balance`): shades of gray (Minkowski p = 6)
-   over the restored subject, weighted by t, gives the light's color. The
-   gains are kept physically possible: red can only go up (1 to 2.5,
-   water never adds red), blue relative to green 0.6 to 2, and in blue
+7. **White balance** (`white-balance`): shades of gray (Minkowski p = 2)
+   over the restored subject, weighted by t, gives the light's color.
+   p = 6 was tried first: it looks mostly at the brightest pixels, often
+   sunlit water, and left blue water scenes violet (red restored to the
+   level of green, blue still far above both). The gains are kept
+   physically possible: red can only go up (1 to 2.5, water never adds
+   red), blue relative to green 0.4 to 2, and in blue
    water blue can only go down, in green water only up. The gains are
    normalized to keep luma. They fade out with distance (by t) and in
    highlights (by the smallest channel from 0.6 to 1), so bright
@@ -108,11 +120,13 @@ The steps as implemented (first version, `operations/underwater-correct.c`):
 8. **Result and keep water color.**
 
        veil  = (1 - backscatter) * (1 - t)
-       A'    = keep-water * A + (1 - keep-water) * luma(A)
        out   = J * gain * (1 - veil) + A' * veil
 
-   so `keep-water` 1 keeps the water's own color in the veil and 0 makes
-   it neutral gray of the same brightness. Pixels that were clipped in
+   where A' is the water color with its chroma in Oklab multiplied by
+   `keep-water`, same hue and lightness: 1 keeps the water's own color in
+   the veil, 0 makes it neutral gray of the same lightness. (Mixed with
+   gray in linear RGB instead, blue water turned lavender and green water
+   khaki.) Pixels that were clipped in
    the photo (median channel 0.85 to 1) are pulled back to their original
    brightest channel, so blown highlights stay white.
 
@@ -126,8 +140,11 @@ precision when GIMP stores the result.
 
 On the 42 test photos (`tests/run.sh`):
 
-- sunlit water near the surface turns slightly cyan (ambient-blue-03);
-- murky green water turns khaki gray rather than a clean green;
+- in very green water with a reef below (ambient-green-08) the reef goes
+  gray while the water above stays bright green, with a cyan ring around
+  a torch;
+- deep open blue water comes out a slightly deeper, more royal blue than
+  in the photo;
 - a slight glow can remain around subjects against open water;
 - a gray subject in blue water (the shark in ambient-blue-01) comes out
   slightly warm;
