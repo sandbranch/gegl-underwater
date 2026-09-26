@@ -302,3 +302,11 @@ photo; formulas, costs, failure modes, licences of reference code and
 patents, and a ranked recommendation. The fitted background surface it
 recommends is being tried on the branch `transmission-surface`.
 
+## Survey 2026: how others handle murky green water and varying water
+
+[survey-2026.md](survey-2026.md): tools, papers and manual recipes for the
+two problems of the branch `transmission-surface` (far sea floor staying
+green in murk; open water whose colour changes over the frame), ranked
+by how likely they fix them, with a run of dive-color-corrector on the
+public test photos for comparison.
+
