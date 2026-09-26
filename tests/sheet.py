@@ -16,7 +16,10 @@ for f in sorted(glob.glob(out + '/*.jpg')):
     b = os.path.basename(f)
     if b.startswith('sheet'):
         continue
-    before = Image.open(os.path.join(src, b)).convert('RGB')
+    stem = b[:-4]
+    source = [p for p in glob.glob(os.path.join(src, stem + '.*'))
+              if p.lower().endswith(('.jpg', '.jpeg'))][0]
+    before = Image.open(source).convert('RGB')
     after = Image.open(f).convert('RGB')
     a0 = np.asarray(before.resize((600, int(600 * before.height / before.width)))).astype(float) / 255
     a1 = np.asarray(after.resize((600, int(600 * after.height / after.width)))).astype(float) / 255
