@@ -136,7 +136,13 @@ integral images (MLLE), and a gentle chroma curve on a*/b* (RGHS).
 Clipping: none for float images; integer images are limited by their
 precision when GIMP stores the result.
 
-### Known issues (first version)
+Speed: 0.7 s inside the operation on a 6000x4000 photo (24 threads;
+`UNDERWATER_DEBUG=1` prints the time of each step), about 0.9 s on top
+of loading and saving it as JPEG on the command line. (Saving as PNG
+takes seconds longer, because the output is float and png-save then
+writes 16 bits; that is not the operation.)
+
+### Known issues
 
 On the 42 test photos (`tests/run.sh`):
 
@@ -147,9 +153,7 @@ On the 42 test photos (`tests/run.sh`):
   in the photo;
 - a slight glow can remain around subjects against open water;
 - a gray subject in blue water (the shark in ambient-blue-01) comes out
-  slightly warm;
-- speed: about 4 s on 24 MP on top of loading and saving (7.5 s against
-  3.5 s for load and save only, on this machine).
+  slightly warm.
 
 ## Controls
 

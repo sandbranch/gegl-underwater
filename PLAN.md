@@ -84,8 +84,9 @@ work is in
 
 ## 5. Speed and polish
 
-- [ ] Spread the per-pixel steps over GEGL's threads (as in
-      gegl-wavelet's denoise); target: under a few seconds for 24 MP
+- [x] Spread the per-pixel steps over GEGL's threads (as in
+      gegl-wavelet's denoise); target: under a few seconds for 24 MP.
+      0.7 s in the operation, 0.9 s more than load and save as JPEG
 - [ ] Slider labels, descriptions and ranges checked in GIMP's dialog
 - [ ] A note on the known GEGL command line warning about a leaked
       buffer, which whole-image operations such as gegl:stretch-contrast

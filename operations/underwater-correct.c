@@ -755,16 +755,25 @@ process (GeglOperation       *operation,
   n   = (gsize) whole->width * whole->height;
   in  = g_new (gfloat, n * 4);
   out = g_new (gfloat, n * 4);
+  gint64               t0     = g_get_monotonic_time (), t1, t2, t3, t4;
+
   gegl_buffer_get (input, whole, 1.0, format, in, GEGL_AUTO_ROWSTRIDE, GEGL_ABYSS_NONE);
+  t1 = g_get_monotonic_time ();
 
   estimate (o, in, whole->width, whole->height, &e);
   refine (in, whole->width, whole->height, &e);
+  t2 = g_get_monotonic_time ();
 
   rows.o = o; rows.e = &e; rows.in = in; rows.out = out; rows.W = whole->width;
   rows.show_t = g_strcmp0 (g_getenv ("UNDERWATER_DEBUG"), "t") == 0;
   gegl_parallel_distribute_range (whole->height, 64, correct_rows, &rows);
+  t3 = g_get_monotonic_time ();
 
   gegl_buffer_set (output, whole, 0, format, out, GEGL_AUTO_ROWSTRIDE);
+  t4 = g_get_monotonic_time ();
+  if (g_getenv ("UNDERWATER_DEBUG"))
+    g_printerr ("underwater: get %.2f s, estimate %.2f s, correct %.2f s, set %.2f s\n",
+                (t1 - t0) / 1e6, (t2 - t1) / 1e6, (t3 - t2) / 1e6, (t4 - t3) / 1e6);
 
   g_free (e.kmap);
   g_free (e.wmap);
