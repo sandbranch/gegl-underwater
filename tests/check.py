@@ -181,6 +181,13 @@ def correct_uniform():
             got = out[0:3]
             check(max_diff(got, want) < 1e-4 and max_diff(out[:-4], out[4:]) < 1e-5,
                   'uniform %s %s: got %s, expected %s' % (rgb, props, list(got), want))
+            # the same with the water color given instead of estimated
+            water = Gegl.Color.new('black')
+            water.set_rgba(rgb[0], rgb[1], rgb[2], 1.0)
+            out = basic(UW, dict(props, **{'auto-water': False, 'water-color': water}),
+                        uniform(16, 12, rgb + (1.0,)), 16, 12)
+            check(max_diff(out[0:3], want) < 1e-4,
+                  'uniform %s %s, water color given: got %s, expected %s' % (rgb, props, list(out[0:3]), want))
 
 
 def keep_water(rgb, k):
@@ -337,7 +344,8 @@ def correct_infinite_input():
     while proc.work()[0]:
         pass
     out = array.array('f', buf.get(r, 1.0, FMT, Gegl.AbyssPolicy.NONE))
-    check(finite(out), 'not finite')
+    want = col.get_property('value').get_rgba()
+    check(max_diff(out, list(want) * 256) < 1e-6, 'not passed through: %s' % list(out[:4]))
 
 
 # underwater:marine-snow

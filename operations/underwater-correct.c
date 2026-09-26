@@ -332,7 +332,7 @@ ambient_weight (const gfloat *d)
 }
 
 static void
-estimate (GeglProperties *o, const gfloat *in, gint W, gint H, Estimate *e)
+estimate (GeglProperties *o, const Babl *format, const gfloat *in, gint W, gint H, Estimate *e)
 {
   gint    x, y, c, k;
   gsize   n, i;
@@ -460,7 +460,11 @@ estimate (GeglProperties *o, const gfloat *in, gint W, gint H, Estimate *e)
   else
     {
       gfloat rgb[3];
-      gegl_color_get_pixel (o->water_color, babl_format ("RGB float"), rgb);
+      /* in the color space of the image, as its pixels are: a color
+       * picked from the photo is then exactly that of its pixels */
+      gegl_color_get_pixel (o->water_color,
+                            babl_format_with_space ("RGB float", babl_format_get_space (format)),
+                            rgb);
       for (c = 0; c < 3; c++)
         e->water[c] = rgb[c];
     }
@@ -724,7 +728,8 @@ prepare (GeglOperation *operation)
 }
 
 /* the corrections use statistics of the whole image, so every result
-   needs all of the input, and is computed once for all of it */
+   needs all of the input, and is computed once for all of it; an input
+   without bounds (such as gegl:color) is passed through */
 static GeglRectangle
 get_required_for_output (GeglOperation       *operation,
                          const gchar         *input_pad,
@@ -733,7 +738,7 @@ get_required_for_output (GeglOperation       *operation,
   const GeglRectangle *in = gegl_operation_source_get_bounding_box (operation,
                                                                      "input");
 
-  return in ? *in : *roi;
+  return in && !gegl_rectangle_is_infinite_plane (in) ? *in : *roi;
 }
 
 static GeglRectangle
@@ -743,7 +748,7 @@ get_cached_region (GeglOperation       *operation,
   const GeglRectangle *in = gegl_operation_source_get_bounding_box (operation,
                                                                      "input");
 
-  return in ? *in : *roi;
+  return in && !gegl_rectangle_is_infinite_plane (in) ? *in : *roi;
 }
 
 static gboolean
@@ -763,6 +768,11 @@ process (GeglOperation       *operation,
 
   if (!whole || whole->width < 1 || whole->height < 1)
     return TRUE;
+  if (gegl_rectangle_is_infinite_plane (whole))
+    {
+      gegl_buffer_copy (input, result, GEGL_ABYSS_NONE, output, result);
+      return TRUE;
+    }
 
   n   = (gsize) whole->width * whole->height;
   in  = g_new (gfloat, n * 4);
@@ -772,7 +782,7 @@ process (GeglOperation       *operation,
   gegl_buffer_get (input, whole, 1.0, format, in, GEGL_AUTO_ROWSTRIDE, GEGL_ABYSS_NONE);
   t1 = g_get_monotonic_time ();
 
-  estimate (o, in, whole->width, whole->height, &e);
+  estimate (o, format, in, whole->width, whole->height, &e);
   refine (in, whole->width, whole->height, &e);
   t2 = g_get_monotonic_time ();
 
