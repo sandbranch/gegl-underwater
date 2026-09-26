@@ -172,8 +172,18 @@ On the 42 test photos (`tests/run.sh`):
   `1 - backscatter` of it. Keeping more of it in open water only (by t)
   was tried and made distant scenes milky; a local white balance or a
   lightness-preserving veil are the next ideas;
-- bluish white rock in blue water can keep a slight lavender tint; a
-  local white balance would help;
+- bluish white rock in blue water can keep a slight lavender tint. The
+  cause is the transmission, not the white balance: bright rock lit by
+  blue light has the water's colour and brightness, so the dark channel
+  takes it for distant water (t about 0.16), and it gets the kept water
+  colour and no white balance (a known weakness of dark channel priors
+  with bright objects). Tried without success (2026-09-26, on GoPro dive
+  photos): a local white balance (gains over a sixth of the photo, alone
+  or mixed half and half with the global ones): almost no change; a
+  narrower highlight protection: almost no change; a transmission floor
+  where the photo has texture: the rock a little better, but schools of
+  fish in open water turned yellow-green. A better transmission estimate
+  for bright objects is the way forward;
 - the brightest part of a sunbeam can get a faint warm tint;
 - a slight glow can remain around subjects against open water;
 - a gray subject in blue water (the shark in ambient-blue-01) comes out
