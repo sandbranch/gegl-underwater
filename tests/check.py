@@ -208,6 +208,33 @@ def keep_water(rgb, k):
 
 
 @case
+def correct_neutral_settings():
+    """With nothing restored or balanced, no backscatter removed, all of
+    the water color kept and clarity 1, the operation takes the veil off
+    and puts it back: out = J t + A (1 - t) with J = max(I - A (1 - t), 0)
+    / max(t, 0.3). Where t >= 0.3 that is the photo itself, except where a
+    channel is below the veil (J clipped at 0), which comes out brighter.
+    (Where t < 0.3, and with clarity below 1, it is not the photo.) t is
+    what UNDERWATER_DEBUG=t shows."""
+    w, h = 200, 150
+    data = scene(w, h)
+    props = {'red-restore': 0.0, 'blue-restore': 0.0, 'white-balance': False,
+             'backscatter': 0.0, 'keep-water': 1.0, 'clarity': 1.0}
+    out = basic(UW, props, data, w, h)
+    os.environ['UNDERWATER_DEBUG'] = 't'
+    try:
+        tmap, _ = run(UW, props, data, w, h)
+    finally:
+        del os.environ['UNDERWATER_DEBUG']
+    near = [i for i in range(0, len(out), 4) if tmap[i] >= 0.3]
+    check(len(near) > 0.2 * w * h, 'the scene has too little near: %d pixels' % len(near))
+    darker = min(out[i + c] - data[i + c] for i in near for c in range(3))
+    same = sum(1 for i in near if max(abs(out[i + c] - data[i + c]) for c in range(3)) < 1e-4)
+    check(darker > -1e-5, 'darker than the photo by %.6f where t >= 0.3' % -darker)
+    check(same > 0.85 * len(near), 'only %d of %d pixels with t >= 0.3 kept' % (same, len(near)))
+
+
+@case
 def correct_black_and_white():
     out = basic(UW, {}, uniform(20, 10, (0, 0, 0, 1)), 20, 10)
     check(max(out[i] for i in range(len(out)) if i % 4 != 3) == 0.0, 'black does not stay black')
