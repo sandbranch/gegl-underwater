@@ -17,6 +17,22 @@ What helps most is variety:
 - full resolution, and if possible both the camera JPEG and a 16-bit
   export of the raw file.
 
+## The test set from Wikimedia Commons
+
+`fetch.py` downloads 42 freely licensed underwater photos from Wikimedia
+Commons (public domain, CC0, CC BY and CC BY-SA) as 3000 pixel wide
+renditions, chosen to cover the list above: ambient blue and green water
+(also murky), wrecks, kelp, reef, strobe-lit subjects, scenes with a
+frame, slate or sign as a reference, and shallow water. `manifest.json`
+names the author, license and Commons page of each; when a result made
+from one of them is shown or published, credit it as the license asks
+(author, license, link).
+
+    tests/images/fetch.py
+
+Their names say what they are: `ambient-blue-01.jpg`,
+`strobe-lit-03.jpg`, ...
+
 ## Published photos
 
 | File | Photographer | License | Notes |
