@@ -108,6 +108,15 @@ The steps as implemented (first version, `operations/underwater-correct.c`):
    without the user having to find the blue slider. The means are over
    the subject, weighted by the ambient weight.
 
+   Two kinds of pixels get no restoration (and no white balance, step
+   7): distant pixels of the water's own colour (their colour vector at
+   less than about 5 degrees from the water map's, faded out from t 0.3
+   to 0.7), which are water: given red, blue water turned indigo; and
+   near-white pixels (smallest channel 0.6 to 1): bluish white rock
+   turned lavender. Both were found on real GoPro dive photos (Poor
+   Knights, New Zealand); close-up subjects under a strong cast keep
+   their correction, as the fade by t leaves them out.
+
 7. **White balance** (`white-balance`): shades of gray (Minkowski p = 2)
    over the restored subject, weighted by t, gives the light's color.
    p = 6 was tried first: it looks mostly at the brightest pixels, often
@@ -130,9 +139,11 @@ The steps as implemented (first version, `operations/underwater-correct.c`):
    `keep-water`, same hue and lightness: 1 keeps the water's own color in
    the veil, 0 makes it neutral gray of the same lightness. (Mixed with
    gray in linear RGB instead, blue water turned lavender and green water
-   khaki.) Pixels that were clipped in
-   the photo (median channel 0.85 to 1) are pulled back to their original
-   brightest channel, so blown highlights stay white.
+   khaki.) Pixels near white in the photo (smallest channel 0.5 to
+   0.85: a torch, the sun, a sunbeam) are pulled to their brightest
+   channel, so they stay white. The median channel was used first; it
+   also caught bright sunlit water (red low, green and blue high), which
+   then turned into a white blob.
 
 Later, as optional finishing steps (PLAN.md): local contrast on L from
 integral images (MLLE), and a gentle chroma curve on a*/b* (RGHS).
@@ -157,8 +168,13 @@ On the 42 test photos (`tests/run.sh`):
   default may change after tests on real dive photos. A smaller window
   for the water map (1/16, 1/32) was tried and is worse: a gray band
   along the reef edge;
-- deep open blue water comes out a slightly deeper, more royal blue than
-  in the photo;
+- open water comes out darker than in the photo: the kept veil is
+  `1 - backscatter` of it. Keeping more of it in open water only (by t)
+  was tried and made distant scenes milky; a local white balance or a
+  lightness-preserving veil are the next ideas;
+- bluish white rock in blue water can keep a slight lavender tint; a
+  local white balance would help;
+- the brightest part of a sunbeam can get a faint warm tint;
 - a slight glow can remain around subjects against open water;
 - a gray subject in blue water (the shark in ambient-blue-01) comes out
   slightly warm.

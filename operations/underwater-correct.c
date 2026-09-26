@@ -77,6 +77,7 @@ property_double (keep_water, _("Keep water color"), 0.5)
 #define GEGL_OP_C_SOURCE underwater-correct.c
 
 #include "gegl-op.h"
+
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
@@ -635,6 +636,20 @@ typedef struct
   gboolean        show_t;  /* UNDERWATER_DEBUG=t: the transmission map */
 } RowData;
 
+/* how much a pixel looks like open water: its colour points the same way
+ * as the water's (cosine of the angle between them in linear RGB) */
+static inline gfloat
+water_likeness (const gfloat *p,
+                const gfloat *a)
+{
+  gfloat dot = p[0] * a[0] + p[1] * a[1] + p[2] * a[2];
+  gfloat np = p[0] * p[0] + p[1] * p[1] + p[2] * p[2];
+  gfloat na = a[0] * a[0] + a[1] * a[1] + a[2] * a[2];
+  gfloat cosine = dot / sqrtf (MAX (np * na, 1e-12f));
+
+  return smoothstep (0.98f, 0.997f, cosine);
+}
+
 static void
 correct_rows (gsize offset, gsize count, gpointer user_data)
 {
@@ -650,7 +665,7 @@ correct_rows (gsize offset, gsize count, gpointer user_data)
         const gfloat *p = d->in + (y * d->W + x) * 4;
         gfloat       *q = d->out + (y * d->W + x) * 4;
         gfloat        t = sample_t (e, x, y);
-        gfloat        v[3], a[3], k[3], m;
+        gfloat        v[3], a[3], k[3], m, wet;
 
         /* 3.-4. (docs/design.md) the subject, without the veil */
         sample_map (e, e->wmap, x, y, a);
@@ -661,6 +676,14 @@ correct_rows (gsize offset, gsize count, gpointer user_data)
          * subjects: open water in the distance must stay water, not turn
          * violet from red added to its blue */
         m = ambient_weight (v) * smoothstep (0.15f, 0.6f, t);
+        /* distant pixels of the water's own colour are water: given red,
+         * blue water turns indigo. Only in the distance: near subjects
+         * under a strong cast have nearly the colour of the water too. */
+        wet = water_likeness (p, a) * (1.0f - smoothstep (0.3f, 0.7f, t));
+        m *= 1.0f - wet;
+        /* near-white pixels get no red either (as they get no white
+         * balance below): bluish white rock would turn lavender */
+        m *= 1.0f - smoothstep (0.6f, 1.0f, MIN (v[0], MIN (v[1], v[2])));
         restore (o, e, v, m);
 
         /* 7. white balance, eased back to neutral for near-white pixels so
@@ -670,13 +693,16 @@ correct_rows (gsize offset, gsize count, gpointer user_data)
           gfloat hi = MIN (v[0], MIN (v[1], v[2]));
           gfloat protect = smoothstep (0.6f, 1.0f, hi);
           gfloat veil = (1.0f - o->backscatter) * (1.0f - t);
-          /* clipped in the photo (a torch, the sun): no color to correct */
+          /* near white in the photo (a torch, the sun, a sunbeam): no
+           * colour to correct. Bright water has a low red and is not, or
+           * it would turn white. */
           gfloat pmax = MAX (p[0], MAX (p[1], p[2]));
-          gfloat pmid = MAX (MIN (p[0], p[1]), MIN (MAX (p[0], p[1]), p[2]));
-          gfloat clipped = smoothstep (0.85f, 1.0f, pmid);
+          gfloat pmin = MIN (p[0], MIN (p[1], p[2]));
+          gfloat clipped = smoothstep (0.5f, 0.85f, pmin);
           /* the white balance is for subjects; in the distance there is
            * mostly water, whose red would be boosted to violet */
           gfloat near = smoothstep (0.15f, 0.6f, t);
+          near *= 1.0f - wet;
 
           for (c = 0; c < 3; c++)
             {
