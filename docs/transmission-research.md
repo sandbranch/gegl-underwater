@@ -35,3 +35,23 @@ coarse region; the veil it gates is large, so every error in the mask
 shows. A soft, continuous measure of "water in front of this pixel" is
 needed rather than a region mask; the branch keeps the build switches
 UW_GATE and UW_VEIL for trying more.
+
+### Survey ideas tried (2026-09-26)
+
+After docs/survey-2026.md. Build switches on this branch: UW_DIV (divide
+green and blue by the water's own balance of them), UW_SOFT (a soft
+water key after Berman's haze-lines code, replacing the distance gate),
+UW_BLUE (turn the kept water colour of green water towards blue and make
+it less saturated), UW_TMIX (0: main's transmission; 1: from the fitted
+surface).
+
+- With the surface transmission (UW_TMIX 1), every variant leaves far
+  murk dark teal: the floor is correctly far, so it is mostly veil.
+- UW_SOFT leaves green fringes along subjects in green water. Dropped.
+- UW_DIV everywhere turns subjects in blue water yellow green (blue is
+  halved). Only in green water (weighted by the water's greenness) and
+  with UW_BLUE 0.7, on main's transmission, it is a small, clean gain:
+  bright green water above a reef becomes a calmer blue green
+  (ambient-green-08), blue water scenes are unchanged, the GoPro set is
+  unchanged or slightly better. Candidate for main:
+  -DUW_TMIX=0.0f -DUW_GATE=0 -DUW_DIV=1.0f -DUW_BLUE=0.7f

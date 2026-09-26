@@ -78,6 +78,15 @@ property_double (keep_water, _("Keep water color"), 0.5)
 
 #include "gegl-op.h"
 
+#ifndef UW_DIV
+#define UW_DIV 0.0f
+#endif
+#ifndef UW_SOFT
+#define UW_SOFT 0
+#endif
+#ifndef UW_BLUE
+#define UW_BLUE 0.0f
+#endif
 #ifndef UW_TMIX
 #define UW_TMIX 1.0f
 #endif
@@ -112,6 +121,9 @@ typedef struct
   gfloat  water[3];       /* water color (veiling light), linear */
   gfloat *owat;           /* how much each pixel is in the open water
                            * found for the fit, softened */
+  gfloat *swat;           /* a soft "this is water" key: how close each
+                           * pixel's colour is to the open water's
+                           * colours (after Berman's haze-lines code) */
   gfloat *smap;           /* the water colour fitted as a smooth surface,
                            * for the transmission only; NULL if none */
   gfloat *wmap;           /* the water color per pixel of the small copy:
@@ -309,6 +321,24 @@ kept_map (GeglProperties *o, Estimate *e)
       gfloat lab[3];
 
       to_oklab (e->wmap + i * 3, lab);
+#if 1 /* UW_BLUE 0 changes nothing */
+      {
+        /* green water is turned towards blue and made less saturated, as
+         * divers' own recipes do: kept green looks like murk, not water */
+        const gfloat *w = e->wmap + i * 3;
+        gfloat g = CLAMP ((w[1] - w[2]) / MAX (w[1], 1e-4f), 0.0f, 1.0f);
+        gfloat h = atan2f (lab[2], lab[1]), c = hypotf (lab[1], lab[2]);
+        /* Oklab hue of a clear sea blue, about 250 degrees */
+        gfloat target = -110.0f * G_PI / 180.0f, dh = target - h;
+
+        while (dh > G_PI)  dh -= 2 * G_PI;
+        while (dh < -G_PI) dh += 2 * G_PI;
+        h += g * UW_BLUE * dh;
+        c *= 1.0f - 0.5f * g * UW_BLUE;
+        lab[1] = c * cosf (h);
+        lab[2] = c * sinf (h);
+      }
+#endif
       lab[1] *= o->keep_water;
       lab[2] *= o->keep_water;
       from_oklab (lab, e->kmap + i * 3);
@@ -477,6 +507,98 @@ open_water (const Estimate *e,
   return count;
 }
 
+/* The soft water key: the Mahalanobis distance of each pixel's colour to
+ * the colours of the open water samples (their mean and covariance, so
+ * water whose colour varies over the photo still counts), through a linear
+ * ramp from "surely water" (the samples' mean distance plus two standard
+ * deviations) to "surely not" (their 99th percentile plus one standard
+ * deviation), and smoothed along the photo's edges. The idea is from
+ * Berman et al.'s haze-lines code; this is our own, simpler form. */
+static void
+soft_water_key (Estimate      *e,
+                const gfloat  *luma,
+                const guint8  *keep)
+{
+  gsize   n = (gsize) e->w * e->h, i, m = 0;
+  gdouble mean[3] = { 0, 0, 0 }, cov[3][3] = { { 0 } }, inv[3][3], det;
+  gfloat *d = g_new (gfloat, n), *ds;
+  gdouble sd = 0, md = 0;
+  gfloat  lo, hi;
+  gint    a, b;
+
+  for (i = 0; i < n; i++)
+    if (keep[i])
+      {
+        for (a = 0; a < 3; a++)
+          mean[a] += e->rgb[i * 3 + a];
+        m++;
+      }
+  for (a = 0; a < 3; a++)
+    mean[a] /= MAX (m, 1);
+  for (i = 0; i < n; i++)
+    if (keep[i])
+      for (a = 0; a < 3; a++)
+        for (b = 0; b < 3; b++)
+          cov[a][b] += (e->rgb[i * 3 + a] - mean[a]) * (e->rgb[i * 3 + b] - mean[b]);
+  for (a = 0; a < 3; a++)
+    {
+      for (b = 0; b < 3; b++)
+        cov[a][b] /= MAX (m, 1);
+      /* a floor, for water of nearly one colour */
+      cov[a][a] += 1e-5;
+    }
+  det = cov[0][0] * (cov[1][1] * cov[2][2] - cov[1][2] * cov[2][1])
+      - cov[0][1] * (cov[1][0] * cov[2][2] - cov[1][2] * cov[2][0])
+      + cov[0][2] * (cov[1][0] * cov[2][1] - cov[1][1] * cov[2][0]);
+  inv[0][0] =  (cov[1][1] * cov[2][2] - cov[1][2] * cov[2][1]) / det;
+  inv[0][1] = -(cov[0][1] * cov[2][2] - cov[0][2] * cov[2][1]) / det;
+  inv[0][2] =  (cov[0][1] * cov[1][2] - cov[0][2] * cov[1][1]) / det;
+  inv[1][0] = -(cov[1][0] * cov[2][2] - cov[1][2] * cov[2][0]) / det;
+  inv[1][1] =  (cov[0][0] * cov[2][2] - cov[0][2] * cov[2][0]) / det;
+  inv[1][2] = -(cov[0][0] * cov[1][2] - cov[0][2] * cov[1][0]) / det;
+  inv[2][0] =  (cov[1][0] * cov[2][1] - cov[1][1] * cov[2][0]) / det;
+  inv[2][1] = -(cov[0][0] * cov[2][1] - cov[0][1] * cov[2][0]) / det;
+  inv[2][2] =  (cov[0][0] * cov[1][1] - cov[0][1] * cov[1][0]) / det;
+
+  for (i = 0; i < n; i++)
+    {
+      gdouble v[3], q = 0;
+
+      for (a = 0; a < 3; a++)
+        v[a] = e->rgb[i * 3 + a] - mean[a];
+      for (a = 0; a < 3; a++)
+        for (b = 0; b < 3; b++)
+          q += v[a] * inv[a][b] * v[b];
+      d[i] = sqrt (MAX (q, 0.0));
+    }
+
+  /* the ramp, from the distances of the samples themselves */
+  ds = g_new (gfloat, MAX (m, 1));
+  m = 0;
+  for (i = 0; i < n; i++)
+    if (keep[i])
+      {
+        ds[m++] = d[i];
+        md += d[i];
+      }
+  md /= MAX (m, 1);
+  for (i = 0; i < m; i++)
+    sd += (ds[i] - md) * (ds[i] - md);
+  sd = sqrt (sd / MAX (m, 1));
+  lo = md + 2.0 * sd;
+  hi = MAX (quantile (ds, m, 0.99f) + sd, lo + 1e-3);
+
+  e->swat = g_new (gfloat, n);
+  for (i = 0; i < n; i++)
+    e->swat[i] = 1.0f - CLAMP ((d[i] - lo) / (hi - lo), 0.0f, 1.0f);
+  guided_filter (luma, e->swat, e->w, e->h, MAX (4, e->w / 17), 1e-3f);
+  for (i = 0; i < n; i++)
+    e->swat[i] = CLAMP (e->swat[i], 0.0f, 1.0f);
+
+  g_free (ds);
+  g_free (d);
+}
+
 /* The water's colour B(x) fitted per channel as a quadratic surface to the
  * open water, with outliers (fish in the water) rejected twice, the curved
  * terms damped so that a fit to one side of the photo does not run away on
@@ -498,6 +620,8 @@ water_surface (Estimate     *e,
   for (i = 0; i < n; i++)
     e->owat[i] = keep[i];
   box_mean (e->owat, e->owat, e->w, e->h, MAX (2, e->w / 60));
+  if (count >= 0.02 * n)
+    soft_water_key (e, luma, keep);
   if (g_getenv ("UNDERWATER_DEBUG"))
     g_printerr ("underwater: open water %.1f %% of the photo\n", 100.0 * count / n);
   if (count < 0.02 * n)
@@ -999,7 +1123,29 @@ correct_rows (gsize offset, gsize count, gpointer user_data)
         /* 3.-4. (docs/design.md) the subject, without the veil */
         sample_map (e, e->wmap, x, y, a);
         sample_map (e, e->kmap, x, y, k);
+#if 1 /* UW_DIV 0 changes nothing */
+        /* the water's cast taken out at every distance: green and blue
+         * divided by the water's own balance of them (Lin, Sun and Ye,
+         * Front. Mar. Sci. 2024); the veil is then colourless. Red is left
+         * to the restoration: the water has almost none. */
+        gfloat pd[3] = { p[0], p[1], p[2] }, ad[3] = { a[0], a[1], a[2] };
+        {
+          gfloat wl = 0.5f * (a[1] + a[2]);
+          gfloat og = CLAMP (a[1] / MAX (wl, 1e-4f), 0.5f, 2.0f);
+          gfloat ob = CLAMP (a[2] / MAX (wl, 1e-4f), 0.5f, 2.0f);
+          /* only in green water: in blue water the division halves blue
+           * and subjects turn yellow; blue water is handled by the rest */
+          gfloat mix = UW_DIV * CLAMP ((a[1] - a[2]) / MAX (a[1], 1e-4f) * 2.0f, 0.0f, 1.0f);
+
+          og = 1.0f + mix * (og - 1.0f);
+          ob = 1.0f + mix * (ob - 1.0f);
+          pd[1] /= og; pd[2] /= ob;
+          ad[1] /= og; ad[2] /= ob;
+        }
+        subject (o, ad, pd, t, v);
+#else
         subject (o, a, p, t, v);
+#endif
 
         /* 5.-6. red and blue restoration where the light is ambient, for
          * subjects: open water in the distance must stay water, not turn
@@ -1007,8 +1153,9 @@ correct_rows (gsize offset, gsize count, gpointer user_data)
         /* how much of a subject this is: not open water. With open water
          * found, that decides (a far sea floor is still a subject); else
          * the distance does, as before */
-        subj = e->owat && UW_GATE ? 1.0f - sample_scalar (e, e->owat, x, y)
-                                  : smoothstep (0.15f, 0.6f, t);
+        subj = e->swat && UW_SOFT ? 1.0f - sample_scalar (e, e->swat, x, y)
+             : e->owat && UW_GATE ? 1.0f - sample_scalar (e, e->owat, x, y)
+             : smoothstep (0.15f, 0.6f, t);
         m = ambient_weight (v) * subj;
         /* distant pixels of the water's own colour are water: given red,
          * blue water turns indigo. Only in the distance: near subjects
@@ -1152,6 +1299,7 @@ process (GeglOperation       *operation,
     g_printerr ("underwater: get %.2f s, estimate %.2f s, correct %.2f s, set %.2f s\n",
                 (t1 - t0) / 1e6, (t2 - t1) / 1e6, (t3 - t2) / 1e6, (t4 - t3) / 1e6);
 
+  g_free (e.swat);
   g_free (e.owat);
   g_free (e.smap);
   g_free (e.kmap);
