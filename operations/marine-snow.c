@@ -98,10 +98,16 @@ density_radius (GeglProperties *o)
 static gint
 margin (GeglProperties *o)
 {
-  /* the mask is needed within the window around each output pixel; each
-   * mask pixel counts the spots in its density window; the opening there
-   * needs the input within twice its radius */
-  return window_radius (o) + density_radius (o) + 2 * opening_radius (o) + 1;
+  /* what an output pixel depends on, from the outside in: the grown mask
+   * within the window around it; the mask before the last growing by a
+   * pixel, within 1 more; the mask before its soft edges were added, r + 1
+   * more; the spots counted in the density window, whose peaks compare
+   * their neighbors, 1 more; and the opening there, which needs the input
+   * within twice its radius. With less, the result depends on how GEGL
+   * splits the image into parts */
+  gint r = opening_radius (o);
+
+  return window_radius (o) + 1 + (r + 1) + density_radius (o) + 1 + 2 * r;
 }
 
 static void
