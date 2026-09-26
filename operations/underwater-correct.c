@@ -107,6 +107,15 @@ typedef struct
   gfloat  greenness;      /* 0 for blue water, 1 for green water, whose blue is absorbed too */
 } Estimate;
 
+/* a broken pixel (NaN or infinity, which float images can have) counts as
+ * black in the estimates, so that it cannot spread over the whole image
+ * through them */
+static inline gfloat
+finite_or_0 (gfloat v)
+{
+  return isfinite (v) ? v : 0.0f;
+}
+
 static inline gfloat
 smoothstep (gfloat e0, gfloat e1, gfloat x)
 {
@@ -338,7 +347,8 @@ estimate (GeglProperties *o, const gfloat *in, gint W, gint H, Estimate *e)
   e->wmap = g_new (gfloat, n * 3);
   e->kmap = g_new (gfloat, n * 3);
 
-  /* a small copy by averaging blocks */
+  /* a small copy by averaging blocks; an image narrower than a block
+   * (1 x 3000) repeats its last row or column */
   for (y = 0; y < e->h; y++)
     for (x = 0; x < e->w; x++)
       {
@@ -348,9 +358,10 @@ estimate (GeglProperties *o, const gfloat *in, gint W, gint H, Estimate *e)
         for (dy = 0; dy < e->f; dy++)
           for (dx = 0; dx < e->f; dx++)
             {
-              const gfloat *p = in + ((gsize) (y * e->f + dy) * W + x * e->f + dx) * 4;
+              gint          xx = MIN (x * e->f + dx, W - 1), yy = MIN (y * e->f + dy, H - 1);
+              const gfloat *p  = in + ((gsize) yy * W + xx) * 4;
               for (c = 0; c < 3; c++)
-                s[c] += p[c];
+                s[c] += finite_or_0 (p[c]);
             }
         for (c = 0; c < 3; c++)
           e->rgb[((gsize) y * e->w + x) * 3 + c] = s[c] / (e->f * e->f);
@@ -576,8 +587,9 @@ refine (const gfloat *in, gint W, gint H, Estimate *e)
         for (dy = 0; dy < e->mf; dy++)
           for (dx = 0; dx < e->mf; dx++)
             {
-              const gfloat *p = in + ((gsize) (y * e->mf + dy) * W + x * e->mf + dx) * 4;
-              l += 0.2126f * p[0] + 0.7152f * p[1] + 0.0722f * p[2];
+              gint          xx = MIN (x * e->mf + dx, W - 1), yy = MIN (y * e->mf + dy, H - 1);
+              const gfloat *p  = in + ((gsize) yy * W + xx) * 4;
+              l += finite_or_0 (0.2126f * p[0] + 0.7152f * p[1] + 0.0722f * p[2]);
             }
         guide[(gsize) y * e->mw + x] = l / (e->mf * e->mf);
 
