@@ -167,7 +167,10 @@ def correct_uniform():
     no restoration or white balance (both fade out below t = 0.15), and
     out = J (1 - veil) + A' veil with J = 0.1 A / 0.3^clarity and
     veil = 0.9 (1 - backscatter). A' is A with its Oklab chroma times
-    keep-water."""
+    keep-water, and, in green water, turned towards blue first. In green
+    water J is taken from the image and A divided by the water's balance of
+    green and blue, which for a uniform image gives J with equal green and
+    blue."""
     for rgb in [(0.5, 0.5, 0.5), (0.02, 0.2, 0.3), (0.05, 0.3, 0.12), (0.3, 0.1, 0.05)]:
         for props in [{}, {'clarity': 0.0, 'backscatter': 0.0, 'keep-water': 1.0},
                       {'clarity': 1.0, 'backscatter': 1.0, 'keep-water': 0.0},
@@ -176,7 +179,8 @@ def correct_uniform():
             c = props.get('clarity', 0.5)
             veil = 0.9 * (1 - props.get('backscatter', 0.5))
             keep = keep_water(rgb, props.get('keep-water', 0.5))
-            want = [0.1 * rgb[i] / 0.3 ** c * (1 - veil) + keep[i] * veil for i in range(3)]
+            j = divided(rgb)
+            want = [0.1 * j[i] / 0.3 ** c * (1 - veil) + keep[i] * veil for i in range(3)]
             out = basic(UW, props, uniform(16, 12, rgb + (1.0,)), 16, 12)
             got = out[0:3]
             check(max_diff(got, want) < 1e-4 and max_diff(out[:-4], out[4:]) < 1e-5,
@@ -190,15 +194,39 @@ def correct_uniform():
                   'uniform %s %s, water color given: got %s, expected %s' % (rgb, props, list(out[0:3]), want))
 
 
+def divided(rgb):
+    """The water color divided by its own balance of green and blue, as
+    the operation does in green water."""
+    r, g, b = rgb
+    wl = 0.5 * (g + b)
+    mix = min(max(2 * (g - b) / max(g, 1e-4), 0), 1)
+    og = 1 + mix * (min(max(g / max(wl, 1e-4), 0.5), 2) - 1)
+    ob = 1 + mix * (min(max(b / max(wl, 1e-4), 0.5), 2) - 1)
+    return [r, g / og, b / ob]
+
+
 def keep_water(rgb, k):
-    """The kept water color of the operation, from and to Oklab."""
+    """The kept water color of the operation, from and to Oklab, green
+    water turned towards blue first."""
+    import math
     r, g, b = rgb
     l = (0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b) ** (1 / 3)
     m = (0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b) ** (1 / 3)
     s = (0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b) ** (1 / 3)
     L = 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s
-    A = (1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s) * k
-    B = (0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s) * k
+    A = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s
+    B = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
+    t = 0.7 * min(max((g - b) / max(g, 1e-4), 0), 1)
+    hue, chroma = math.atan2(B, A), math.hypot(A, B)
+    dh = -110 * math.pi / 180 - hue
+    while dh > math.pi:
+        dh -= 2 * math.pi
+    while dh < -math.pi:
+        dh += 2 * math.pi
+    hue += t * dh
+    chroma *= 1 - 0.5 * t
+    A = chroma * math.cos(hue) * k
+    B = chroma * math.sin(hue) * k
     l = (L + 0.3963377774 * A + 0.2158037573 * B) ** 3
     m = (L - 0.1055613458 * A - 0.0638541728 * B) ** 3
     s = (L - 0.0894841775 * A - 1.2914855480 * B) ** 3

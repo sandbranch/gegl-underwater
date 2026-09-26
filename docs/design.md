@@ -189,6 +189,23 @@ On the 42 test photos (`tests/run.sh`):
 - a gray subject in blue water (the shark in ambient-blue-01) comes out
   slightly warm.
 
+### Green water (2026-09-26)
+
+Two steps for green water, after docs/survey-2026.md, both weighted by
+how green the water is (nothing changes in blue water):
+
+- Before the subject is taken from the veil (step 4), green and blue are
+  divided by the water's own balance of them, `og = A_g / ((A_g + A_b) / 2)`
+  and `ob = A_b / ((A_g + A_b) / 2)` (each limited to 0.5 to 2), mixed in
+  by `2 (A_g - A_b) / A_g`. This takes the water's cast out at every
+  distance, so far subjects lose it too (after Lin, Sun and Ye, Front.
+  Mar. Sci. 2024). In blue water it halved blue and turned subjects
+  yellow, so it is left out there.
+- The kept water colour (step 8) is turned in Oklab towards a sea blue
+  (hue about 250 degrees) and made less saturated, by `0.7 (A_g - A_b) /
+  A_g`: kept green looks like murk, and divers' own recipes all move green
+  water towards blue.
+
 ### Only the pixels
 
 The operation uses only the pixels of the photo, never its metadata, so

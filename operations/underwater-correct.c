@@ -283,6 +283,25 @@ kept_map (GeglProperties *o, Estimate *e)
       gfloat lab[3];
 
       to_oklab (e->wmap + i * 3, lab);
+      {
+        /* green water is turned towards blue and made less saturated, as
+         * divers' own recipes do: kept green looks like murk, not water
+         * (docs/survey-2026.md) */
+        const gfloat *w = e->wmap + i * 3;
+        gfloat g = 0.7f * CLAMP ((w[1] - w[2]) / MAX (w[1], 1e-4f), 0.0f, 1.0f);
+        gfloat h = atan2f (lab[2], lab[1]), c = hypotf (lab[1], lab[2]);
+        /* the Oklab hue of a clear sea blue, about 250 degrees */
+        gfloat dh = -110.0f * G_PI / 180.0f - h;
+
+        while (dh > G_PI)
+          dh -= 2 * G_PI;
+        while (dh < -G_PI)
+          dh += 2 * G_PI;
+        h += g * dh;
+        c *= 1.0f - 0.5f * g;
+        lab[1] = c * cosf (h);
+        lab[2] = c * sinf (h);
+      }
       lab[1] *= o->keep_water;
       lab[2] *= o->keep_water;
       from_oklab (lab, e->kmap + i * 3);
@@ -670,7 +689,21 @@ correct_rows (gsize offset, gsize count, gpointer user_data)
         /* 3.-4. (docs/design.md) the subject, without the veil */
         sample_map (e, e->wmap, x, y, a);
         sample_map (e, e->kmap, x, y, k);
-        subject (o, a, p, t, v);
+        {
+          /* in green water, the water's cast is taken out at every
+           * distance: green and blue divided by the water's own balance
+           * of them (after Lin, Sun and Ye, Front. Mar. Sci. 2024), so the
+           * veil is colourless. Not in blue water, where halving blue
+           * turns subjects yellow; red is left to the restoration */
+          gfloat wl = 0.5f * (a[1] + a[2]);
+          gfloat mix = CLAMP (2.0f * (a[1] - a[2]) / MAX (a[1], 1e-4f), 0.0f, 1.0f);
+          gfloat og = 1.0f + mix * (CLAMP (a[1] / MAX (wl, 1e-4f), 0.5f, 2.0f) - 1.0f);
+          gfloat ob = 1.0f + mix * (CLAMP (a[2] / MAX (wl, 1e-4f), 0.5f, 2.0f) - 1.0f);
+          gfloat pd[3] = { p[0], p[1] / og, p[2] / ob };
+          gfloat ad[3] = { a[0], a[1] / og, a[2] / ob };
+
+          subject (o, ad, pd, t, v);
+        }
 
         /* 5.-6. red and blue restoration where the light is ambient, for
          * subjects: open water in the distance must stay water, not turn
