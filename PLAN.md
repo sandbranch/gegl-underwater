@@ -76,7 +76,7 @@ work is in
 - [x] A separate operation `underwater:marine-snow` (Filters > Enhance >
       Remove Marine Snow...), after Farhadifard et al. 2017, with fast
       stand-ins for their tests (research.md). On the synthetic scene
-      (`tests/marine-snow/run.sh`): 97.7 % of the specks no longer
+      (`tests/marine-snow/run.sh`): 97.4 % of the specks (374 of 384) no longer
       visible, sand 0.03 % and the fish 0.06 % of pixels changed, a large
       white object untouched, a dark eye under a speck kept; 1 to 2 s on
       24 MP. Works as a non-destructive filter in GIMP
