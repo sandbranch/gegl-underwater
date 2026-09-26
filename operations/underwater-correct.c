@@ -99,6 +99,10 @@ typedef struct
   gint    mw, mh, mf;     /* medium size, on which t is refined along edges */
   gfloat *tm;             /* transmission at medium size */
   gfloat  water[3];       /* water color (veiling light), linear */
+  gfloat *owat;           /* how much each pixel is in the open water
+                           * found for the fit, softened */
+  gfloat *smap;           /* the water colour fitted as a smooth surface,
+                           * for the transmission only; NULL if none */
   gfloat *wmap;           /* the water color per pixel of the small copy:
                            * lighter towards the surface, darker below */
   gfloat *kmap;           /* the part of it that is kept: keep-water sets
@@ -228,6 +232,8 @@ transmission (Estimate *e, const gfloat *luma)
     for (x = 0; x < e->w; x++)
       {
         const gfloat *a = e->wmap + ((gsize) y * e->w + x) * 3;
+        const gfloat *b = e->smap ? e->smap + ((gsize) y * e->w + x) * 3 : a;
+        gfloat vs = G_MAXFLOAT;
         gfloat v = G_MAXFLOAT;
         gint   dx, dy;
         for (dy = -1; dy <= 1; dy++)
@@ -236,8 +242,17 @@ transmission (Estimate *e, const gfloat *luma)
               gint xx = CLAMP (x + dx, 0, e->w - 1), yy = CLAMP (y + dy, 0, e->h - 1);
               const gfloat *p = e->rgb + ((gsize) yy * e->w + xx) * 3;
               v = MIN (v, MIN (p[1] / a[1], p[2] / a[2]));
+              vs = MIN (vs, MIN (p[1] / b[1], p[2] / b[2]));
             }
-        e->t[(gsize) y * e->w + x] = 1.0f - 0.9f * v;
+        /* against the fitted surface in the open water, where its colour
+         * changes (and dark open water is still water), and against the
+         * local average elsewhere: in murk the floor is far, but should
+         * still be corrected as a subject */
+        {
+          gfloat w = e->smap && e->owat ? e->owat[(gsize) y * e->w + x] : 0.0f;
+
+          e->t[(gsize) y * e->w + x] = 1.0f - 0.9f * ((1.0f - w) * v + w * vs);
+        }
       }
   guided_filter (luma, e->t, e->w, e->h, MAX (4, e->w / 40), 1e-3f);
   for (i = 0; i < n; i++)
@@ -468,6 +483,12 @@ water_surface (Estimate     *e,
   gint    c;
 
   count = open_water (e, luma, keep);
+  e->owat = g_new (gfloat, n);
+  for (i = 0; i < n; i++)
+    e->owat[i] = keep[i];
+  box_mean (e->owat, e->owat, e->w, e->h, MAX (2, e->w / 60));
+  if (g_getenv ("UNDERWATER_DEBUG"))
+    g_printerr ("underwater: open water %.1f %% of the photo\n", 100.0 * count / n);
   if (count < 0.02 * n)
     {
       g_free (vals);
@@ -553,7 +574,7 @@ water_surface (Estimate     *e,
           gfloat  v = coef[0] + coef[1] * x + coef[2] * y + coef[3] * x * x +
                       coef[4] * x * y + coef[5] * y * y;
 
-          e->wmap[i * 3 + c] = CLAMP (v, MAX (lo * UW_SURF_LO, 1e-4f), MIN (hi * 1.1f, 1.0f));
+          e->smap[i * 3 + c] = CLAMP (v, MAX (lo * UW_SURF_LO, 1e-4f), MIN (hi * 1.1f, 1.0f));
         }
     }
 
@@ -741,8 +762,10 @@ estimate (GeglProperties *o, const Babl *format, const gfloat *in, gint W, gint 
        * the local average. In green murk the sea floor is as smooth and as
        * water coloured as the water, and a fit to it leaves the floor green
        * (ambient-green-02 to -08). */
+      water_map (e);
+      e->smap = g_new (gfloat, n * 3);
       if (!water_surface (e, luma))
-        water_map (e);
+        g_clear_pointer (&e->smap, g_free);
       transmission (e, luma);
     }
   kept_map (o, e);
@@ -960,11 +983,17 @@ correct_rows (gsize offset, gsize count, gpointer user_data)
         /* distant pixels of the water's own colour are water: given red,
          * blue water turns indigo. Only in the distance: near subjects
          * under a strong cast have nearly the colour of the water too. */
-        wet = water_likeness (p, a) * (1.0f - smoothstep (0.3f, 0.7f, t));
+#ifndef UW_WET
+#define UW_WET 1.0f
+#endif
+        wet = UW_WET * water_likeness (p, a) * (1.0f - smoothstep (0.3f, 0.7f, t));
         m *= 1.0f - wet;
         /* near-white pixels get no red either (as they get no white
          * balance below): bluish white rock would turn lavender */
-        m *= 1.0f - smoothstep (0.6f, 1.0f, MIN (v[0], MIN (v[1], v[2])));
+#ifndef UW_NEARWHITE
+#define UW_NEARWHITE 1.0f
+#endif
+        m *= 1.0f - UW_NEARWHITE * smoothstep (0.6f, 1.0f, MIN (v[0], MIN (v[1], v[2])));
         restore (o, e, v, m);
 
         /* 7. white balance, eased back to neutral for near-white pixels so
@@ -1090,6 +1119,8 @@ process (GeglOperation       *operation,
     g_printerr ("underwater: get %.2f s, estimate %.2f s, correct %.2f s, set %.2f s\n",
                 (t1 - t0) / 1e6, (t2 - t1) / 1e6, (t3 - t2) / 1e6, (t4 - t3) / 1e6);
 
+  g_free (e.owat);
+  g_free (e.smap);
   g_free (e.kmap);
   g_free (e.wmap);
   g_free (e.tm);
