@@ -281,6 +281,7 @@ them at full size.
 | [US12373929B2](https://patents.google.com/patent/US12373929B2/en) | Arashi Vision (Insta360) | active to 2042 | 8-step recipe: 8-bit to linear, mean-based adjustment, per-pixel weights, red/blue gains, ranking-based stretch, weighted fusion with the original | do not use this combination (design.md) |
 | [US11024047B2](https://patents.google.com/patent/US11024047B2/en) | Univ. of California (IBLA) | active to 2037 | depth from a multi-scale blurriness map, max filter, refinement | no blurriness-based depth |
 | [US10885611B2](https://patents.google.com/patent/US10885611B2/en) | Tel Aviv Univ., Univ. of Haifa (haze-lines) | US: expired, maintenance fees not paid | clustering pixels into haze-lines | no haze-line clustering; other countries not checked |
+| [US11810272B2](https://patents.google.com/patent/US11810272B2/en) | Carmel Haifa Univ., Ramot at Tel Aviv Univ. (continuation of the above) | US: granted 2023-11-07, in force (maintenance not checked) | claims 1 and 2 require clustering pixels into haze-lines | no haze-line clustering; see transmission-research.md |
 | Sea-thru family (WO2020234886A1, US20220215509A1, EP3973500, ...) | Univ. of Haifa, SeaErra | US application abandoned; others not checked | recovery using a range map | no range map |
 | [US11710245B2](https://patents.google.com/patent/US11710245B2/en), continuation [US12217439B2](https://patents.google.com/patent/US12217439B2/en) | Jack Wade | granted 2023 and 2025 | marine snow removal from live video: every independent claim needs a camera, optical flow between frames with the camera's own motion subtracted, and (in the continuation) a chroma mask per frame, video display, FPGA or DVR; removed pixels come from earlier frames or neighbors | a single photo has no frames and no optical flow; our spatial detection and median fill is outside these claims (read from the granted claims, all 6 and all 20) |
 
@@ -291,3 +292,13 @@ Our reading of the claims, not legal advice.
 The licenses of the EUVP and LSUI datasets; the Sea-thru and haze-lines
 patents outside the US; official code for UDCP, the Red Channel prior and
 WCID (none found).
+
+## Transmission for bright objects and a varying water colour
+
+[transmission-research.md](transmission-research.md) (2026-09-26): which
+single-image methods estimate the transmission better for bright objects
+lit by the water's light, and for a water colour that changes over the
+photo; formulas, costs, failure modes, licences of reference code and
+patents, and a ranked recommendation. The fitted background surface it
+recommends is being tried on the branch `transmission-surface`.
+
