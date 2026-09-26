@@ -6,3 +6,4 @@ tests/images/*
 !tests/images/manifest.json
 !tests/images/fetch.py
 tests/output/
+__pycache__/
