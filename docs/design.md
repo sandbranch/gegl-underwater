@@ -148,7 +148,11 @@ On the 42 test photos (`tests/run.sh`):
 
 - in very green water with a reef below (ambient-green-08) the reef goes
   gray while the water above stays bright green, with a cyan ring around
-  a torch;
+  a torch. At keep-water 0.5 very saturated water keeps strong color next
+  to a neutral subject; lower keep-water fixes it for such photos, so the
+  default may change after tests on real dive photos. A smaller window
+  for the water map (1/16, 1/32) was tried and is worse: a gray band
+  along the reef edge;
 - deep open blue water comes out a slightly deeper, more royal blue than
   in the photo;
 - a slight glow can remain around subjects against open water;
