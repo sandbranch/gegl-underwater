@@ -289,6 +289,281 @@ kept_map (GeglProperties *o, Estimate *e)
     }
 }
 
+#ifndef UW_SURF_T
+#define UW_SURF_T 0.5f
+#endif
+#ifndef UW_SURF_LO
+#define UW_SURF_LO 0.5f
+#endif
+
+/* compares floats, for qsort () */
+static int
+compare_floats (const void *a,
+                const void *b)
+{
+  gfloat x = *(const gfloat *) a, y = *(const gfloat *) b;
+
+  return (x > y) - (x < y);
+}
+
+/* the q-quantile (0 to 1) of n values, which are reordered */
+static gfloat
+quantile (gfloat *v,
+          gsize   n,
+          gfloat  q)
+{
+  qsort (v, n, sizeof (gfloat), compare_floats);
+  return v[MIN (n - 1, (gsize) (q * (n - 1) + 0.5f))];
+}
+
+/* solves the 6 x 6 system a x = b in place (Gaussian elimination with
+ * partial pivoting); FALSE if it is singular */
+static gboolean
+solve6 (gdouble a[6][6],
+        gdouble b[6])
+{
+  gint i, j, k;
+
+  for (i = 0; i < 6; i++)
+    {
+      gint    p = i;
+      gdouble f;
+
+      for (j = i + 1; j < 6; j++)
+        if (fabs (a[j][i]) > fabs (a[p][i]))
+          p = j;
+      if (fabs (a[p][i]) < 1e-12)
+        return FALSE;
+      for (k = 0; k < 6; k++)
+        {
+          gdouble tmp = a[i][k];
+          a[i][k] = a[p][k];
+          a[p][k] = tmp;
+        }
+      f = b[i]; b[i] = b[p]; b[p] = f;
+      for (j = i + 1; j < 6; j++)
+        {
+          f = a[j][i] / a[i][i];
+          for (k = i; k < 6; k++)
+            a[j][k] -= f * a[i][k];
+          b[j] -= f * b[i];
+        }
+    }
+  for (i = 5; i >= 0; i--)
+    {
+      for (k = i + 1; k < 6; k++)
+        b[i] -= a[i][k] * b[k];
+      b[i] /= a[i][i];
+    }
+  return TRUE;
+}
+
+/* The open water of the small copy: smooth, of the water's colour, however
+ * dark or light (the water's own light changes over a photo, bright
+ * towards the sun and dark looking down), and in regions of at least 3 %
+ * of the photo. keep is set to 1 there, 0 elsewhere; returns the count. */
+static gsize
+open_water (const Estimate *e,
+            const gfloat   *luma,
+            guint8         *keep)
+{
+  gsize   n = (gsize) e->w * e->h, i, count = 0;
+  gfloat *l = g_new (gfloat, n), *l2 = g_new (gfloat, n);
+  gfloat *m2 = g_new (gfloat, n), *s2 = g_new (gfloat, n);
+  gfloat *m6 = g_new (gfloat, n), *s6 = g_new (gfloat, n);
+  gfloat *w = g_new (gfloat, n);
+  gint   *stack = g_new (gint, n), *region = g_new (gint, n);
+
+  /* gamma encoded, so that noise in dark water counts about the same as
+   * in bright water */
+  for (i = 0; i < n; i++)
+    {
+      l[i]  = sqrtf (MAX (luma[i], 0.0f));
+      l2[i] = l[i] * l[i];
+    }
+  box_mean (l, m2, e->w, e->h, 2);
+  box_mean (l2, s2, e->w, e->h, 2);
+  box_mean (l, m6, e->w, e->h, 6);
+  box_mean (l2, s6, e->w, e->h, 6);
+  for (i = 0; i < n; i++)
+    {
+      const gfloat *p = e->rgb + i * 3, *a = e->water;
+      gfloat dot = p[0] * a[0] + p[1] * a[1] + p[2] * a[2];
+      gfloat np = p[0] * p[0] + p[1] * p[1] + p[2] * p[2];
+      gfloat na = a[0] * a[0] + a[1] * a[1] + a[2] * a[2];
+      gfloat cosine = dot / sqrtf (MAX (np * na, 1e-12f));
+      gfloat sd2 = sqrtf (MAX (s2[i] - m2[i] * m2[i], 0.0f));
+      gfloat sd6 = sqrtf (MAX (s6[i] - m6[i] * m6[i], 0.0f));
+      gfloat rough = MAX (sd2, sd6) / MAX (m6[i], 1e-3f);
+
+      w[i] = smoothstep (0.97f, 0.995f, cosine) *
+             (1.0f - smoothstep (0.015f, 0.05f, rough));
+    }
+  box_mean (w, w, e->w, e->h, 3);
+
+  /* the regions of pixels over 0.5, by flood fill; small ones go */
+  /* and far by the first estimate: in murk the sea floor is as smooth and
+   * as water coloured as the water, but darker */
+  for (i = 0; i < n; i++)
+    keep[i] = w[i] > 0.5f && e->t[i] < UW_SURF_T ? 1 : 0;
+  for (i = 0; i < n; i++)
+    {
+      gsize top = 0, size = 0, j;
+
+      if (keep[i] != 1)
+        continue;
+      /* 2: found, in the region being filled */
+      keep[i] = 2;
+      stack[top++] = (gint) i;
+      while (top > 0)
+        {
+          gint at = stack[--top], x = at % e->w, y = at / e->w, d;
+          gint nb[4] = { x > 0 ? at - 1 : -1, x < e->w - 1 ? at + 1 : -1,
+                         y > 0 ? at - e->w : -1, y < e->h - 1 ? at + e->w : -1 };
+
+          region[size++] = at;
+          for (d = 0; d < 4; d++)
+            if (nb[d] >= 0 && keep[nb[d]] == 1)
+              {
+                keep[nb[d]] = 2;
+                stack[top++] = nb[d];
+              }
+        }
+      /* 3 to keep, 4 to drop */
+      for (j = 0; j < size; j++)
+        keep[region[j]] = size >= 0.03 * n ? 3 : 4;
+    }
+  for (i = 0; i < n; i++)
+    {
+      keep[i] = keep[i] == 3;
+      count += keep[i];
+    }
+
+  g_free (region);
+  g_free (stack);
+  g_free (w);
+  g_free (s6);
+  g_free (m6);
+  g_free (s2);
+  g_free (m2);
+  g_free (l2);
+  g_free (l);
+  return count;
+}
+
+/* The water's colour B(x) fitted per channel as a quadratic surface to the
+ * open water, with outliers (fish in the water) rejected twice, the curved
+ * terms damped so that a fit to one side of the photo does not run away on
+ * the other, and no colour outside that of the open water. Into the water
+ * map; FALSE (and no change) if less than 2 % of the photo is open water.
+ * (The idea of a smooth background light: Schechner and Karpel 2005; the
+ * transmission against it is then the dark channel rule, as before.) */
+static gboolean
+water_surface (Estimate     *e,
+               const gfloat *luma)
+{
+  gsize   n = (gsize) e->w * e->h, i, count;
+  guint8 *keep = g_new (guint8, n), *sel = g_new (guint8, n);
+  gfloat *res = g_new (gfloat, n), *vals = g_new (gfloat, n);
+  gint    c;
+
+  count = open_water (e, luma, keep);
+  if (count < 0.02 * n)
+    {
+      g_free (vals);
+      g_free (res);
+      g_free (sel);
+      g_free (keep);
+      return FALSE;
+    }
+
+  for (c = 0; c < 3; c++)
+    {
+      gdouble coef[6] = { e->water[c], 0, 0, 0, 0, 0 };
+      gint    round;
+      gsize   m;
+      gfloat  lo, hi;
+
+      memcpy (sel, keep, n);
+      for (round = 0; round < 3; round++)
+        {
+          gdouble ata[6][6] = { { 0 } }, atb[6] = { 0 };
+          gsize   k = 0;
+          gint    a, b;
+
+          for (i = 0; i < n; i++)
+            {
+              gdouble x = 2.0 * (i % e->w) / MAX (e->w - 1, 1) - 1.0;
+              gdouble y = 2.0 * (i / e->w) / MAX (e->h - 1, 1) - 1.0;
+              gdouble f[6] = { 1, x, y, x * x, x * y, y * y };
+
+              if (!sel[i])
+                continue;
+              for (a = 0; a < 6; a++)
+                {
+                  for (b = 0; b < 6; b++)
+                    ata[a][b] += f[a] * f[b];
+                  atb[a] += f[a] * e->rgb[i * 3 + c];
+                }
+              k++;
+            }
+          for (a = 3; a < 6; a++)
+            ata[a][a] += 0.05 * k;
+          if (k < 6 || !solve6 (ata, atb))
+            break;
+          memcpy (coef, atb, sizeof (coef));
+
+          /* the residuals, and the samples within 3 robust deviations */
+          m = 0;
+          for (i = 0; i < n; i++)
+            {
+              gdouble x = 2.0 * (i % e->w) / MAX (e->w - 1, 1) - 1.0;
+              gdouble y = 2.0 * (i / e->w) / MAX (e->h - 1, 1) - 1.0;
+
+              res[i] = e->rgb[i * 3 + c] - (coef[0] + coef[1] * x + coef[2] * y +
+                                            coef[3] * x * x + coef[4] * x * y +
+                                            coef[5] * y * y);
+              if (sel[i])
+                vals[m++] = fabsf (res[i]);
+            }
+          {
+            gfloat mad = quantile (vals, m, 0.5f) + 1e-6f;
+
+            for (i = 0; i < n; i++)
+              sel[i] = keep[i] && fabsf (res[i]) < 3.0f * 1.4826f * mad;
+          }
+        }
+
+      /* the range of the open water's colour */
+      m = 0;
+      for (i = 0; i < n; i++)
+        if (sel[i])
+          vals[m++] = e->rgb[i * 3 + c];
+      if (m == 0)
+        for (i = 0; i < n; i++)
+          if (keep[i])
+            vals[m++] = e->rgb[i * 3 + c];
+      lo = quantile (vals, m, 0.01f);
+      hi = vals[MIN (m - 1, (gsize) (0.99f * (m - 1) + 0.5f))];
+
+      for (i = 0; i < n; i++)
+        {
+          gdouble x = 2.0 * (i % e->w) / MAX (e->w - 1, 1) - 1.0;
+          gdouble y = 2.0 * (i / e->w) / MAX (e->h - 1, 1) - 1.0;
+          gfloat  v = coef[0] + coef[1] * x + coef[2] * y + coef[3] * x * x +
+                      coef[4] * x * y + coef[5] * y * y;
+
+          e->wmap[i * 3 + c] = CLAMP (v, MAX (lo * UW_SURF_LO, 1e-4f), MIN (hi * 1.1f, 1.0f));
+        }
+    }
+
+  g_free (vals);
+  g_free (res);
+  g_free (sel);
+  g_free (keep);
+  return TRUE;
+}
+
 /* The water color varies over a photo: open water is lighter and greener
  * towards the sunlit surface and darker and bluer below. With one color
  * for all of it, water lighter than that color counts as subject, and its
@@ -461,7 +736,13 @@ estimate (GeglProperties *o, const Babl *format, const gfloat *in, gint W, gint 
   transmission (e, luma);
   if (o->auto_water)
     {
-      water_map (e);
+      /* in blue water, the water's colour fitted as a smooth surface to
+       * the open water; otherwise, or with too little open water for that,
+       * the local average. In green murk the sea floor is as smooth and as
+       * water coloured as the water, and a fit to it leaves the floor green
+       * (ambient-green-02 to -08). */
+      if (!water_surface (e, luma))
+        water_map (e);
       transmission (e, luma);
     }
   kept_map (o, e);
