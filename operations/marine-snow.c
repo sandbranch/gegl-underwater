@@ -221,6 +221,7 @@ process (GeglOperation       *operation,
   gfloat         *vals   = g_new (gfloat, (gsize) win * 3);
   gfloat         *dist   = g_new (gfloat, win);
   gint           *order  = g_new (gint, win);
+  gfloat         *sel    = g_new (gfloat, win);
   gsize           i;
   gint            x, y, c;
 
@@ -320,10 +321,10 @@ process (GeglOperation       *operation,
           {
             gint x0 = MAX (x - dr, 0), x1 = MIN (x + dr + 1, w);
             gint y0 = MAX (y - dr, 0), y1 = MIN (y + dr + 1, h);
-            guint32 c = count[(gsize) y1 * (w + 1) + x1] - count[(gsize) y0 * (w + 1) + x1]
-                      - count[(gsize) y1 * (w + 1) + x0] + count[(gsize) y0 * (w + 1) + x0];
+            guint32 spots = count[(gsize) y1 * (w + 1) + x1] - count[(gsize) y0 * (w + 1) + x1]
+                          - count[(gsize) y1 * (w + 1) + x0] + count[(gsize) y0 * (w + 1) + x0];
 
-            if ((gfloat) c / ((x1 - x0) * (y1 - y0)) > density_limit)
+            if ((gfloat) spots / ((x1 - x0) * (y1 - y0)) > density_limit)
               continue;
           }
 
@@ -384,7 +385,7 @@ process (GeglOperation       *operation,
         gsize         j  = (gsize) ry * w + rx;
         const gfloat *p  = in + j * 4;
         gfloat       *d  = out + ((gsize) y * roi->width + x) * 4;
-        gint          count = 0, dx, dy;
+        gint          nvals = 0, dx, dy;
 
         memcpy (d, p, 4 * sizeof (gfloat));
 
@@ -413,20 +414,20 @@ process (GeglOperation       *operation,
                   {
                     gfloat v = in[k * 4 + c];
 
-                    vals[count * 3 + c] = v;
+                    vals[nvals * 3 + c] = v;
                     d2 += (v - bg[c]) * (v - bg[c]);
                   }
-                dist[count] = d2;
-                order[count] = count;
-                count++;
+                dist[nvals] = d2;
+                order[nvals] = nvals;
+                nvals++;
               }
 
-          if (count < 3)
+          if (nvals < 3)
             continue;
 
           /* the neighbors that look like what is behind the speck */
           keep = 0;
-          for (a = 0; a < count; a++)
+          for (a = 0; a < nvals; a++)
             if (dist[a] < 0.15f * 0.15f)
               order[keep++] = a;
 
@@ -441,8 +442,6 @@ process (GeglOperation       *operation,
 
           for (c = 0; c < 3; c++)
             {
-              gfloat sel[win];
-
               for (a = 0; a < keep; a++)
                 sel[a] = vals[order[a] * 3 + c];
               qsort (sel, keep, sizeof (gfloat), compare_floats);
@@ -453,6 +452,7 @@ process (GeglOperation       *operation,
 
   gegl_buffer_set (output, roi, 0, format, out, GEGL_AUTO_ROWSTRIDE);
 
+  g_free (sel);
   g_free (order);
   g_free (dist);
   g_free (vals);
