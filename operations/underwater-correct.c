@@ -334,9 +334,9 @@ ambient_weight (const gfloat *d)
 static void
 estimate (GeglProperties *o, const Babl *format, const gfloat *in, gint W, gint H, Estimate *e)
 {
-  gint    x, y, c, k;
+  gint    x, y, c;
   gsize   n, i;
-  gfloat *dark, *darkp, *luma;
+  gfloat *luma;
 
   e->f = MAX (1, (MAX (W, H) + SMALL_SIZE - 1) / SMALL_SIZE);
   e->w = MAX (1, W / e->f);
@@ -367,31 +367,12 @@ estimate (GeglProperties *o, const Babl *format, const gfloat *in, gint W, gint 
           e->rgb[((gsize) y * e->w + x) * 3 + c] = s[c] / (e->f * e->f);
       }
 
-  /* the water color: the brightest pixels of the dark channel of green
-   * and blue (UDCP), which are the most distant, veiled ones */
-  dark  = g_new (gfloat, n);
-  darkp = g_new (gfloat, n);
-  luma  = g_new (gfloat, n);
+  luma = g_new (gfloat, n);
   for (i = 0; i < n; i++)
     {
       const gfloat *p = e->rgb + i * 3;
-      dark[i] = MIN (p[1], p[2]);
       luma[i] = 0.2126f * p[0] + 0.7152f * p[1] + 0.0722f * p[2];
     }
-  /* min filter over 7x7: a bright small object does not count as water */
-  for (y = 0; y < e->h; y++)
-    for (x = 0; x < e->w; x++)
-      {
-        gfloat v = G_MAXFLOAT;
-        gint   dx, dy;
-        for (dy = -3; dy <= 3; dy++)
-          for (dx = -3; dx <= 3; dx++)
-            {
-              gint xx = CLAMP (x + dx, 0, e->w - 1), yy = CLAMP (y + dy, 0, e->h - 1);
-              v = MIN (v, dark[(gsize) yy * e->w + xx]);
-            }
-        darkp[(gsize) y * e->w + x] = v;
-      }
 
   if (o->auto_water)
     {
@@ -519,21 +500,18 @@ estimate (GeglProperties *o, const Babl *format, const gfloat *in, gint W, gint 
           sw += wgt;
         }
       {
-        gfloat ill[3], mean;
+        gfloat ill[3], rr, rb, norm;
+
         for (c = 0; c < 3; c++)
           ill[c] = pow (s[c] / MAX (sw, 1e-9), 1.0 / WB_P);
-        mean = (ill[0] + ill[1] + ill[2]) / 3.0f;
-        /* limited, so that a tiny red cannot blow up the noise */
         /* gains relative to green, within what the physics allows: red
          * is absorbed first, so it is never too strong (a strobe-lit red
          * is real); and the water's own color is never strengthened
          * against the other of green and blue, which in blue water turns
-         * open water violet */
-        gfloat rr = CLAMP (ill[1] / MAX (ill[0], 1e-6f), 1.0f, 2.5f);
-        gfloat rb = CLAMP (ill[1] / MAX (ill[2], 1e-6f), WB_BMIN, 2.0f);
-        gfloat norm;
-
-        (void) mean;
+         * open water violet; and limited, so that a tiny red cannot blow
+         * up the noise */
+        rr = CLAMP (ill[1] / MAX (ill[0], 1e-6f), 1.0f, 2.5f);
+        rb = CLAMP (ill[1] / MAX (ill[2], 1e-6f), WB_BMIN, 2.0f);
         if (e->water[2] >= e->water[1])
           rb = MIN (rb, 1.0f);
         else
@@ -557,10 +535,7 @@ estimate (GeglProperties *o, const Babl *format, const gfloat *in, gint W, gint 
                   e->water[0], e->water[1], e->water[2], e->greenness, e->mean_r, e->mean_g, e->mean_b,
                   e->gain[0], e->gain[1], e->gain[2], tmin, tmax);
     }
-  (void) k;
   g_free (luma);
-  g_free (darkp);
-  g_free (dark);
 }
 
 /* The transmission refined at a medium size (about 1536 pixels across),
@@ -655,7 +630,7 @@ typedef struct
   GeglProperties *o;
   const Estimate *e;
   const gfloat   *in;
-  gfloat         *out;
+  gfloat         *out;     /* may be in: each pixel is read before it is written */
   gint            W;
   gboolean        show_t;  /* UNDERWATER_DEBUG=t: the transmission map */
 } RowData;
@@ -764,7 +739,8 @@ process (GeglOperation       *operation,
   Estimate             e      = { 0, };
   RowData              rows;
   gsize                n;
-  gfloat              *in, *out;
+  gfloat              *buf;
+  gint64               t0, t1, t2, t3, t4;
 
   if (!whole || whole->width < 1 || whole->height < 1)
     return TRUE;
@@ -774,24 +750,34 @@ process (GeglOperation       *operation,
       return TRUE;
     }
 
+  /* the whole image in one piece, 16 bytes a pixel; the result is written
+   * over it, as each pixel only needs itself once the estimates are made.
+   * Without the memory for it the photo is left as it is: an abort would
+   * take GIMP down with it */
   n   = (gsize) whole->width * whole->height;
-  in  = g_new (gfloat, n * 4);
-  out = g_new (gfloat, n * 4);
-  gint64               t0     = g_get_monotonic_time (), t1, t2, t3, t4;
+  buf = n <= G_MAXSIZE / (4 * sizeof (gfloat)) ? g_try_new (gfloat, n * 4) : NULL;
+  if (!buf)
+    {
+      g_warning ("underwater:correct: not enough memory for an image of %d x %d",
+                 whole->width, whole->height);
+      gegl_buffer_copy (input, whole, GEGL_ABYSS_NONE, output, whole);
+      return TRUE;
+    }
+  t0 = g_get_monotonic_time ();
 
-  gegl_buffer_get (input, whole, 1.0, format, in, GEGL_AUTO_ROWSTRIDE, GEGL_ABYSS_NONE);
+  gegl_buffer_get (input, whole, 1.0, format, buf, GEGL_AUTO_ROWSTRIDE, GEGL_ABYSS_NONE);
   t1 = g_get_monotonic_time ();
 
-  estimate (o, format, in, whole->width, whole->height, &e);
-  refine (in, whole->width, whole->height, &e);
+  estimate (o, format, buf, whole->width, whole->height, &e);
+  refine (buf, whole->width, whole->height, &e);
   t2 = g_get_monotonic_time ();
 
-  rows.o = o; rows.e = &e; rows.in = in; rows.out = out; rows.W = whole->width;
+  rows.o = o; rows.e = &e; rows.in = buf; rows.out = buf; rows.W = whole->width;
   rows.show_t = g_strcmp0 (g_getenv ("UNDERWATER_DEBUG"), "t") == 0;
   gegl_parallel_distribute_range (whole->height, 64, correct_rows, &rows);
   t3 = g_get_monotonic_time ();
 
-  gegl_buffer_set (output, whole, 0, format, out, GEGL_AUTO_ROWSTRIDE);
+  gegl_buffer_set (output, whole, 0, format, buf, GEGL_AUTO_ROWSTRIDE);
   t4 = g_get_monotonic_time ();
   if (g_getenv ("UNDERWATER_DEBUG"))
     g_printerr ("underwater: get %.2f s, estimate %.2f s, correct %.2f s, set %.2f s\n",
@@ -802,8 +788,7 @@ process (GeglOperation       *operation,
   g_free (e.tm);
   g_free (e.t);
   g_free (e.rgb);
-  g_free (out);
-  g_free (in);
+  g_free (buf);
   return TRUE;
 }
 
