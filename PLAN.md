@@ -6,7 +6,7 @@ version (milestones 1 to 3), tested on 42 Commons photos; the known
 issues are in docs/design.md. Next: those issues, SQUID, and real dive
 photos from the user. The status of all the GIMP 3
 work is in
-[gimp-plugin-devtools/STATUS.md](https://github.com/sandbranch/gimp-plugin-devtools/blob/main/STATUS.md).
+[gimp-devtools/STATUS.md](https://github.com/sandbranch/gimp-devtools/blob/main/STATUS.md).
 
 ## 0. Skeleton (done)
 

@@ -3,7 +3,7 @@
 # given properties (default settings without any) and measures the result.
 #   tests/marine-snow/run.sh name [prop=value ...]
 # GEGL and GIMP run isolated from your folders (tests/isolate.sh, with
-# gimp-plugin-devtools/gimp-run.sh if it is there): HOME and the XDG
+# gimp-devtools/gimp-run.sh if it is there): HOME and the XDG
 # folders inside the Flatpak point into tests/output/gimp-home, so
 # nothing lands in ~/.var/app/org.gimp.GIMP.
 set -e
