@@ -310,3 +310,7 @@ green in murk; open water whose colour changes over the frame), ranked
 by how likely they fix them, with a run of dive-color-corrector on the
 public test photos for comparison.
 
+
+## Patents on transmission priors
+
+[patents-transmission.md](patents-transmission.md) (2026-09-27): the status of the patents on the priors in transmission-research.md; the dark channel prior patent US 8,340,461 B2 lapsed in 2020, and the live ones to avoid.
