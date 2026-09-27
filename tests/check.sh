@@ -11,6 +11,14 @@
 #   gimp-build.sh . meson setup build-asan -Db_sanitize=address,undefined
 #   gimp-build.sh . ninja -C build-asan
 #   BUILD=build-asan SANITIZE=1 tests/check.sh
+#
+# GEGL and GIMP run isolated from your folders (tests/isolate.sh, with
+# gimp-plugin-devtools/gimp-run.sh if it is there): HOME and the XDG
+# folders inside the Flatpak point into tests/output/gimp-home, so
+# nothing lands in ~/.var/app/org.gimp.GIMP.
+# Before and after, it lists your folders of GIMP and the other apps
+# (gimp-plugin-devtools/snapshot.sh, skipped without it) and fails if
+# anything there changed.
 set -e
 here=$(cd "$(dirname "$0")" && pwd)
 top=$(dirname "$here")
@@ -26,20 +34,32 @@ for m in underwater-correct marine-snow; do
   cp "$build/$m.so" "$mod/"
 done
 
+src=$top
+GIMP_RUN_HOME=${GIMP_RUN_HOME:-$here/output/gimp-home}
+export GIMP_RUN_HOME
+# shellcheck source=SCRIPTDIR/isolate.sh
+. "$here/isolate.sh"
+snapshot_take "$here/output/snapshot-check-before.txt"
+rc=0
 if [ "${GIMP_FLATPAK:-1}" != 0 ] && command -v flatpak >/dev/null 2>&1 &&
    flatpak info org.gimp.GIMP >/dev/null 2>&1; then
   if [ -n "$SANITIZE" ]; then
     # the modules are instrumented but python and GEGL are not: the
     # runtimes are loaded first. Leaks are not checked (python and GLib
     # keep much until exit); any other error ends the case as a FAIL
-    exec flatpak run --devel --filesystem="$top" --env=GEGL_PATH="$mod:/app/lib/gegl-0.4" \
+    gimp_run --flatpak --devel --filesystem="$top" --env=GEGL_PATH="$mod:/app/lib/gegl-0.4" \
       --env=LD_PRELOAD=libasan.so.8:libubsan.so.1 \
       --env=ASAN_OPTIONS=detect_leaks=0:abort_on_error=0:exitcode=3 \
       --env=UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1:exitcode=4 \
       --env=CHECK_TIMEOUT="${CHECK_TIMEOUT:-600}" \
-      --command=python3 org.gimp.GIMP "$here/check.py" "$@"
+      -- python3 "$here/check.py" "$@" || rc=$?
+  else
+    gimp_run --flatpak --filesystem="$top" --env=GEGL_PATH="$mod:/app/lib/gegl-0.4" \
+      -- python3 "$here/check.py" "$@" || rc=$?
   fi
-  exec flatpak run --filesystem="$top" --env=GEGL_PATH="$mod:/app/lib/gegl-0.4" \
-    --command=python3 org.gimp.GIMP "$here/check.py" "$@"
+else
+  gimp_run --native --env=GEGL_PATH="$mod:$(pkg-config --variable=pluginsdir gegl-0.4)" \
+    -- python3 "$here/check.py" "$@" || rc=$?
 fi
-GEGL_PATH="$mod:$(pkg-config --variable=pluginsdir gegl-0.4)" exec python3 "$here/check.py" "$@"
+snapshot_check "$here/output/snapshot-check-before.txt" "" || rc=1
+exit $rc
