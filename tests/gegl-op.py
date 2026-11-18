@@ -29,7 +29,7 @@ def value(op, name, text):
     if t in (GObject.TYPE_DOUBLE, GObject.TYPE_FLOAT):
         return float(text)
     if t.is_a(GObject.TYPE_ENUM):
-        for v in spec.enum_class.values.values():
+        for v in spec.enum_class.__enum_values__.values():
             if text in (v.value_nick, v.value_name, str(int(v))):
                 return int(v)
         sys.exit('%s: no value %s for %s' % (op, text, name))
@@ -42,6 +42,10 @@ def main(argv):
     if len(argv) < 4:
         sys.exit(__doc__)
     src, dst, op = argv[1:4]
+    # as the gegl tool does: GEGL offers GPL3 operations only to
+    # applications that say they are GPL3 too (said before Gegl.init, or
+    # GEGL loads its modules twice)
+    Gegl.config().set_property('application-license', 'GPL3')
     Gegl.init(None)
     g = Gegl.Node()
     load = g.create_child('gegl:load')
@@ -57,7 +61,7 @@ def main(argv):
     load.link(node)
     node.link(save)
     save.process()
-    del g
+    del g, load, node, save
     Gegl.exit()
 
 
