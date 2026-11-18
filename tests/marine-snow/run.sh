@@ -4,8 +4,8 @@
 #   tests/marine-snow/run.sh name [prop=value ...]
 # GEGL and GIMP run isolated from your folders (tests/isolate.sh, with
 # gimp-devtools/gimp-run.sh if it is there): HOME and the XDG
-# folders inside the Flatpak point into tests/output/gimp-home, so
-# nothing lands in ~/.var/app/org.gimp.GIMP.
+# folders point into tests/output/gimp-home, so nothing lands in your
+# own GEGL, GIMP or babl folders.
 set -e
 here=$(cd "$(dirname "$0")" && pwd)
 top=$(dirname "$(dirname "$here")")
@@ -20,6 +20,6 @@ export GIMP_RUN_HOME
 mod="$out/modules"; rm -rf "$mod"; mkdir -p "$mod"
 cp "$top/build/marine-snow.so" "$mod/"
 name=${1:-default}; [ $# -gt 0 ] && shift
-gimp_run --flatpak --filesystem="$here" --env=GEGL_PATH="$mod:/app/lib/gegl-0.4" -- gegl \
-  "$out/snow.png" -o "$out/$name.png" -- underwater:marine-snow "$@" 2>&1 | grep -v -i "leak\|warning\|^$" || true
+gimp_run --env=GEGL_PATH="$mod:$(pkg-config --variable=pluginsdir gegl-0.4)" \
+  -- python3 "$top/tests/gegl-op.py" "$out/snow.png" "$out/$name.png" underwater:marine-snow "$@" 2>&1 | grep -v -i "leak\|warning\|^$" || true
 python3 "$here/check.py" "$out" "$out/$name.png"

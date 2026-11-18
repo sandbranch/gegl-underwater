@@ -39,19 +39,27 @@ To test, after building:
 
 ## Building and installing
 
-Needs meson, ninja, a C compiler and the GEGL development files (0.4.62 or
-newer).
+For the native GIMP 3. Needs meson, ninja, a C compiler and the GEGL
+development files (0.4.62 or newer), which come with GIMP's; on Debian and
+Ubuntu:
+
+    sudo apt install gimp libgimp-3.0-dev meson ninja-build
+
+The operations go into your GEGL folder, where GIMP loads them at start:
 
     meson setup build -Dmoduledir=$HOME/.local/share/gegl-0.4/plug-ins
     ninja -C build install
 
-For the Flatpak version of GIMP, build inside it with
-[gimp-devtools](https://github.com/sandbranch/gimp-devtools):
+or the same through
+[gimp-devtools](https://github.com/sandbranch/gimp-devtools), which finds
+the folder itself:
 
     gimp-build.sh . meson setup build -Dmoduledir=\$GEGL_OPDIR
     gimp-build.sh . ninja -C build install
 
-Restart GIMP after installing.
+Restart GIMP after installing. The tests also need python3-gi with GEGL's
+introspection data (gir1.2-gegl-0.4), which GIMP's Python plug-ins use
+too.
 
 ## License
 

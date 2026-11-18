@@ -1,5 +1,5 @@
 #!/bin/sh
-# Both operations as non-destructive filters in the Flatpak GIMP, without
+# Both operations as non-destructive filters in the native GIMP, without
 # a window, on a synthetic float image, against plain GEGL
 # (tests/gimp-check.py). Uses the modules from build/ (or $BUILD) and a
 # throwaway GIMP profile in tests/output/gimp-profile (GIMP3_DIRECTORY),
@@ -7,8 +7,8 @@
 # The first run takes about a minute (GIMP sets up the new profile).
 # GEGL and GIMP run isolated from your folders (tests/isolate.sh, with
 # gimp-devtools/gimp-run.sh if it is there): HOME and the XDG
-# folders inside the Flatpak point into tests/output/gimp-home, so
-# nothing lands in ~/.var/app/org.gimp.GIMP.
+# folders point into tests/output/gimp-home, so nothing lands in your
+# own GEGL, GIMP or babl folders.
 # Before and after, it lists your folders of GIMP and the other apps
 # (gimp-devtools/snapshot.sh, skipped without it) and fails if
 # anything there changed.
@@ -32,9 +32,8 @@ export GIMP_RUN_HOME
 snapshot_take "$here/output/snapshot-gimp-before.txt"
 status="$here/output/gimp-check.status"
 rm -f "$status"
-gimp_run --flatpak --filesystem="$top" \
-  --env=GIMP3_DIRECTORY="$here/output/gimp-profile" \
-  --env=GEGL_PATH="$mod:/app/lib/gegl-0.4" \
+gimp_run --env=GIMP3_DIRECTORY="$here/output/gimp-profile" \
+  --env=GEGL_PATH="$mod:$(pkg-config --variable=pluginsdir gegl-0.4)" \
   --env=UW_CHECK_STATUS="$status" \
   -- gimp-console-3.2 --no-interface --no-data --no-fonts \
   --batch-interpreter python-fu-eval \

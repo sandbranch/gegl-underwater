@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Pass/fail tests of underwater:correct and underwater:marine-snow on
 synthetic images, through GEGL's Python bindings (tests/check.sh runs it
-inside the Flatpak GIMP with the modules from build/). No photos, network
+with the modules from build/ and the GEGL that GIMP uses). No photos, network
 or display needed, and no numpy: the images are small.
 
   check.py              all cases, each in a process of its own, so that a

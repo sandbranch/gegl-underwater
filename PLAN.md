@@ -100,6 +100,6 @@ work is in
 ## 6. Release
 
 - [ ] README with before/after examples (photos used with permission)
-- [ ] Install instructions for GIMP (native and Flatpak), tested
+- [ ] Install instructions for GIMP, tested
 - [ ] Offer it to the community: discuss.pixls.us, GIMP forums, and the
       diving photography communities
